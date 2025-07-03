@@ -1,0 +1,14 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions: { contents: write }
+jobs:
+  dist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/cache-cargo-install-action@v1
+        with: { tool: cargo-dist }
+      - run: cargo dist build --ci
+      - run: cargo dist upload --ci

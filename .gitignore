@@ -1,0 +1,9 @@
+target/
+# Binaries
+*.exe
+*.dylib
+*.so
+*.dll
+# IDEs
+.idea/
+.vscode/
