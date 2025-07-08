@@ -1,0 +1,145 @@
+name: SwiftConcur Advanced Security Example
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+env:
+  # Security: Use environment variables for configuration
+  XCODE_VERSION: '15.0'
+  SWIFT_VERSION: '5.9'
+  
+jobs:
+  security-checks:
+    runs-on: macos-latest
+    
+    # Security: Minimal permissions
+    permissions:
+      contents: read
+      security-events: write
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Security: Don't persist credentials
+          persist-credentials: false
+          
+      - name: Validate inputs
+        run: |
+          # Security: Validate environment before proceeding
+          if [[ -z "$GITHUB_TOKEN" ]]; then
+            echo "::error::GitHub token not available"
+            exit 1
+          fi
+          
+          # Check token permissions (basic validation)
+          curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/user" > /dev/null || {
+            echo "::error::Invalid GitHub token"
+            exit 1
+          }
+          
+  swiftconcur-analysis:
+    runs-on: macos-latest
+    needs: security-checks
+    
+    # Security: Specific permissions for this job
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      checks: write
+      actions: read
+      
+    # Security: Use environment protection rules
+    environment: 
+      name: swiftconcur-analysis
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+          
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/com.apple.dt.Xcode
+            ~/.cache/cargo
+          key: ${{ runner.os }}-xcode-${{ hashFiles('**/*.pbxproj') }}
+          restore-keys: |
+            ${{ runner.os }}-xcode-
+            
+      - name: Run SwiftConcur Analysis
+        id: swiftconcur
+        uses: ./
+        with:
+          scheme: ${{ github.event.repository.name }}
+          configuration: 'Debug'
+          threshold: '0'  # Security: Strict threshold for security-sensitive repos
+          format: 'json'
+          fail-on-error: 'false'
+          retry-count: '5'  # More retries for reliability
+          timeout: '45'
+        env:
+          # Security: Use secrets for sensitive data
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional: Custom API endpoint for enterprise
+          GITHUB_API_URL: ${{ secrets.GITHUB_API_URL }}
+          
+      - name: Security scan of results
+        run: |
+          # Security: Scan results for sensitive data before uploading
+          if [[ -f "/tmp/warnings.json" ]]; then
+            # Check for potential secrets in warning messages
+            if grep -i "password\|secret\|token\|key" "/tmp/warnings.json"; then
+              echo "::warning::Potential sensitive data detected in warnings"
+            fi
+          fi
+          
+      - name: Upload results securely
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swiftconcur-results-${{ github.sha }}
+          path: |
+            /tmp/warnings.json
+          retention-days: 7  # Security: Limited retention
+          
+      - name: Create security-aware PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Security: Sanitize output before posting
+            const warningCount = parseInt('${{ steps.swiftconcur.outputs.warning-count }}');
+            const success = '${{ steps.swiftconcur.outputs.success }}' === 'true';
+            
+            // Don't post sensitive information in public comments
+            const safeComment = success 
+              ? `## SwiftConcur Analysis ✅\n\nFound ${warningCount} concurrency warnings.\n\n_Analysis completed successfully._`
+              : `## SwiftConcur Analysis ❌\n\nAnalysis failed. Check the action logs for details.\n\n_Please review the security implications of any changes._`;
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: safeComment
+            });
+            
+      - name: Report to security team
+        if: failure()
+        run: |
+          # Security: Alert security team on failures
+          echo "::warning::SwiftConcur analysis failed. Security team should be notified."
+          # Could integrate with security monitoring systems here

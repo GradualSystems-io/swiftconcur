@@ -1,0 +1,80 @@
+name: SwiftConcur Basic Usage
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  swiftconcur:
+    runs-on: macos-latest
+    
+    # Security: Limit permissions to minimum required
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      checks: write
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.0'
+          
+      - name: Run SwiftConcur Analysis
+        id: swiftconcur
+        uses: ./
+        with:
+          scheme: 'MyApp'
+          configuration: 'Debug'
+          threshold: '5'
+          format: 'markdown'
+          fail-on-error: 'false'  # Reliability: don't fail builds on tool errors
+          retry-count: '3'
+          timeout: '30'
+        env:
+          # Security: Use GitHub's automatic token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Upload analysis results
+        uses: actions/upload-artifact@v4
+        if: always()  # Upload even on failure
+        with:
+          name: swiftconcur-results
+          path: |
+            /tmp/warnings.json
+            /tmp/xcodebuild.log
+          retention-days: 30
+          
+      - name: Create check run
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const warningCount = parseInt('${{ steps.swiftconcur.outputs.warning-count }}');
+            const success = '${{ steps.swiftconcur.outputs.success }}' === 'true';
+            
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'SwiftConcur Analysis',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: success && warningCount <= 5 ? 'success' : 'failure',
+              output: {
+                title: `Found ${warningCount} concurrency warnings`,
+                summary: '${{ steps.swiftconcur.outputs.summary-markdown }}'
+              }
+            });
+            
+      - name: Fail if threshold exceeded
+        if: steps.swiftconcur.outputs.warning-count > 5
+        run: |
+          echo "::error::Warning count (${{ steps.swiftconcur.outputs.warning-count }}) exceeds threshold (5)"
+          exit 1

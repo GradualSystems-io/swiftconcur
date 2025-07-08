@@ -1,0 +1,79 @@
+name: 'SwiftConcur CI'
+description: 'Analyze Swift concurrency warnings in Xcode builds'
+author: 'Gradual Systems'
+
+inputs:
+  swift-version:
+    description: 'Swift version to use'
+    required: false
+    default: '5.9'
+  workspace-path:
+    description: 'Path to Xcode workspace or project'
+    required: false
+    default: '.'
+  scheme:
+    description: 'Xcode scheme to build'
+    required: true
+  configuration:
+    description: 'Build configuration (Debug/Release)'
+    required: false
+    default: 'Debug'
+  threshold:
+    description: 'Maximum number of warnings before failing'
+    required: false
+    default: '0'
+  format:
+    description: 'Output format (json|markdown|slack)'
+    required: false
+    default: 'markdown'
+  fail-on-error:
+    description: 'Whether to fail the action on tool errors (false for reliability)'
+    required: false
+    default: 'false'
+  retry-count:
+    description: 'Number of retries for transient failures'
+    required: false
+    default: '3'
+  timeout:
+    description: 'Timeout for build in minutes'
+    required: false
+    default: '30'
+
+outputs:
+  warning-count:
+    description: 'Number of concurrency warnings found'
+    value: ${{ steps.analyze.outputs.warning-count }}
+  summary-markdown:
+    description: 'Markdown formatted summary'
+    value: ${{ steps.analyze.outputs.summary-markdown }}
+  json-report:
+    description: 'Full JSON report'
+    value: ${{ steps.analyze.outputs.json-report }}
+  success:
+    description: 'Whether analysis completed successfully'
+    value: ${{ steps.analyze.outputs.success }}
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  env:
+    GITHUB_TOKEN: ${{ github.token }}
+    SWIFT_VERSION: ${{ inputs.swift-version }}
+    WORKSPACE_PATH: ${{ inputs.workspace-path }}
+    SCHEME: ${{ inputs.scheme }}
+    CONFIGURATION: ${{ inputs.configuration }}
+    THRESHOLD: ${{ inputs.threshold }}
+    FORMAT: ${{ inputs.format }}
+    FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
+    RETRY_COUNT: ${{ inputs.retry-count }}
+    TIMEOUT: ${{ inputs.timeout }}
+    GITHUB_REPOSITORY: ${{ github.repository }}
+    GITHUB_REF: ${{ github.ref }}
+    GITHUB_SHA: ${{ github.sha }}
+    GITHUB_EVENT_NAME: ${{ github.event_name }}
+    GITHUB_RUN_ID: ${{ github.run_id }}
+    GITHUB_RUN_NUMBER: ${{ github.run_number }}
+
+branding:
+  icon: 'shield'
+  color: 'blue'
