@@ -132,8 +132,7 @@ mod tests {
         let mut large_input = String::new();
         for i in 0..10000 {
             large_input.push_str(&format!(
-                "{{\"type\": \"warning\", \"message\": \"actor-isolated property {} cannot be used\"}}\n",
-                i
+                "{{\"type\": \"warning\", \"message\": \"actor-isolated property {i} cannot be used\"}}\n"
             ));
         }
         let cursor = std::io::Cursor::new(large_input);
@@ -190,7 +189,7 @@ mod tests {
         struct FailingReader;
         impl Read for FailingReader {
             fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
-                Err(io::Error::new(io::ErrorKind::Other, "simulated IO error"))
+                Err(io::Error::other("simulated IO error"))
             }
         }
         
@@ -293,7 +292,7 @@ not valid json
     #[test]
     fn test_very_long_message() {
         let long_message = "a".repeat(10000) + "actor-isolated property issue";
-        let input = format!(r#"{{"type": "warning", "message": "{}"}}"#, long_message);
+        let input = format!(r#"{{"type": "warning", "message": "{long_message}"}}"#);
         let warnings = find_concurrency_warnings(&input);
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].len() > 10000);
@@ -304,8 +303,7 @@ not valid json
         let mut input = String::new();
         for i in 0..1000 {
             input.push_str(&format!(
-                "{{\"type\": \"warning\", \"message\": \"unrelated warning {}\"}}\n",
-                i
+                "{{\"type\": \"warning\", \"message\": \"unrelated warning {i}\"}}\n"
             ));
         }
         input.push_str(r#"{"type": "warning", "message": "actor-isolated property issue"}"#);
@@ -332,7 +330,7 @@ not valid json
     fn test_parse_error_display() {
         let io_error = io::Error::new(io::ErrorKind::NotFound, "file not found");
         let parse_error = ParseError::Io(io_error);
-        let error_string = format!("{}", parse_error);
+        let error_string = format!("{parse_error}");
         assert!(error_string.contains("IO error"));
         assert!(error_string.contains("file not found"));
     }
@@ -343,7 +341,7 @@ not valid json
             kind: "warning".to_string(),
             message: "test message".to_string(),
         };
-        let debug_string = format!("{:?}", msg);
+        let debug_string = format!("{msg:?}");
         assert!(debug_string.contains("warning"));
         assert!(debug_string.contains("test message"));
     }
