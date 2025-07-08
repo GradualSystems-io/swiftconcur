@@ -10,5 +10,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/cache-cargo-install-action@v1
         with: { tool: cargo-dist }
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked
       - run: cargo dist build --ci
       - run: cargo dist upload --ci
