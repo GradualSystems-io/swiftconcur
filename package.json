@@ -1,0 +1,22 @@
+{
+  "name": "swiftconcur-ci",
+  "version": "1.0.0",
+  "description": "GitHub Action for Swift concurrency warning detection",
+  "main": "scripts/post-comment.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "swift",
+    "concurrency",
+    "github-action",
+    "ci-cd",
+    "actor-isolation"
+  ],
+  "author": "SwiftConcur",
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.10.1",
+    "@actions/github": "^6.0.0"
+  }
+}

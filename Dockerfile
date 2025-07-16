@@ -1,63 +1,48 @@
-FROM rust:slim as builder
+# Multi-stage build for efficiency
+FROM rust:1.78-slim as builder
 
-# Install build dependencies
+# Install dependencies for building
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
-    curl \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Create app directory
-WORKDIR /app
+# Copy parser source
+WORKDIR /build
+COPY parser/Cargo.toml ./
+COPY parser/src ./src
 
-# Copy source code
-COPY . .
+# Build the parser
+RUN cargo build --release
 
-# Build the parser with error handling
-RUN cargo build --release --bin cli || \
-    (echo "Build failed, attempting with verbose output..." && \
-     cargo build --release --bin cli --verbose) || \
-    (echo "Build failed completely" && exit 1)
+# Runtime image
+FROM swift:5.10-slim
 
-# Runtime stage
-FROM debian:bookworm-slim
-
-# Install runtime dependencies including xcodebuild requirements
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
-    ca-certificates \
     curl \
     jq \
     git \
-    gnupg \
-    wget \
-    xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for security
-RUN groupadd -r swiftconcur && useradd -r -g swiftconcur swiftconcur
-
-# Create necessary directories
-RUN mkdir -p /app /home/swiftconcur && \
-    chown -R swiftconcur:swiftconcur /app /home/swiftconcur
+# Install Node.js for GitHub API scripts
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
 
 # Copy parser binary
-COPY --from=builder /app/target/release/cli /usr/local/bin/swiftconcur-parser
-RUN chmod +x /usr/local/bin/swiftconcur-parser
+COPY --from=builder /build/target/release/swiftconcur-parser /usr/local/bin/swiftconcur
 
-# Copy entrypoint script
+# Copy action scripts
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY scripts/ /scripts/
 
-# Set working directory
-WORKDIR /github/workspace
+# Make scripts executable
+RUN chmod +x /entrypoint.sh /scripts/*.sh
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD /usr/local/bin/swiftconcur-parser --help || exit 1
+# Install Node dependencies for comment poster
+WORKDIR /scripts
+RUN npm install @actions/core @actions/github
 
-# Switch to non-root user
-USER swiftconcur
+WORKDIR /
 
-# Set entrypoint
 ENTRYPOINT ["/entrypoint.sh"]

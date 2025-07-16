@@ -1,0 +1,1 @@
+{"type": "warning", "message": "actor-isolated property 'data' can not be referenced from a non-isolated context", "file": "tests/sample_sources/Sources/MyApp/DataManager.swift", "line": 18, "column": 25}

@@ -1,0 +1,5 @@
+{"type": "warning", "message": "actor-isolated property 'shared' can not be referenced from a non-isolated context", "file": "Sources/MyApp/DataManager.swift", "line": 42, "column": 15}
+{"type": "warning", "message": "Type 'MyClass' does not conform to the 'Sendable' protocol", "file": "Sources/MyApp/MyClass.swift", "line": 15, "column": 7}
+{"type": "warning", "message": "data race detected in concurrent access to variable", "file": "Sources/MyApp/RaceCondition.swift", "line": 55, "column": 20}
+{"type": "warning", "message": "Main actor-isolated property 'isLoading' can not be referenced from a nonisolated context", "file": "Sources/MyApp/ViewModel.swift", "line": 156, "column": 20}
+{"type": "warning", "message": "capture of 'self' with non-sendable type requires 'Sendable' conformance", "file": "Sources/MyApp/Capture.swift", "line": 23, "column": 12}

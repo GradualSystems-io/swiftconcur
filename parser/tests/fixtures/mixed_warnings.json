@@ -1,0 +1,5 @@
+{"type": "warning", "message": "actor-isolated property 'shared' can not be referenced from a non-isolated context", "file": "Sources/MyApp/DataManager.swift", "line": 42, "column": 15}
+{"type": "warning", "message": "Type 'MyClass' does not conform to the 'Sendable' protocol", "file": "Sources/MyApp/MyClass.swift", "line": 15, "column": 7}
+{"type": "warning", "message": "data race detected in concurrent access to variable", "file": "Sources/MyApp/RaceCondition.swift", "line": 55, "column": 20}
+{"type": "warning", "message": "performance overhead detected in async context", "file": "Sources/MyApp/Performance.swift", "line": 33, "column": 5}
+{"type": "warning", "message": "unknown concurrency warning", "file": "Sources/MyApp/Unknown.swift", "line": 10, "column": 1}

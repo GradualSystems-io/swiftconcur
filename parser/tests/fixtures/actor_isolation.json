@@ -1,0 +1,4 @@
+{"type": "warning", "message": "actor-isolated property 'shared' can not be referenced from a non-isolated context", "file": "Sources/MyApp/DataManager.swift", "line": 42, "column": 15}
+{"type": "warning", "message": "actor-isolated method 'updateData' cannot be called from non-isolated context", "file": "Sources/MyApp/NetworkService.swift", "line": 78, "column": 8}
+{"type": "warning", "message": "Main actor-isolated property 'isLoading' can not be referenced from a nonisolated context", "file": "Sources/MyApp/ViewModel.swift", "line": 156, "column": 20}
+{"type": "warning", "message": "actor-isolated instance method 'processData' can not be referenced from a non-isolated context", "file": "Sources/MyApp/Processor.swift", "line": 89, "column": 12}

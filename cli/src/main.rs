@@ -1,6 +1,6 @@
 use clap::{arg, Parser};
 use color_eyre::eyre::Result;
-use parser::find_concurrency_warnings;
+use swiftconcur_parser::find_concurrency_warnings;
 use std::{fs, path::PathBuf};
 
 #[derive(Parser)]

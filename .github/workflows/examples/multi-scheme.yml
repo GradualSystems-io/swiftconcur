@@ -1,162 +1,19 @@
-name: SwiftConcur Multi-Scheme Analysis
-
-on:
-  pull_request:
-    branches: [main]
-  schedule:
-    - cron: '0 9 * * 1'  # Weekly on Monday
+name: SwiftConcur CI Example - Multi-Scheme
+on: [pull_request]
 
 jobs:
-  detect-schemes:
+  concurrency-matrix:
     runs-on: macos-latest
-    permissions:
-      contents: read
-    outputs:
-      schemes: ${{ steps.schemes.outputs.schemes }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        
-      - name: Detect Xcode schemes
-        id: schemes
-        run: |
-          # Security: Validate scheme names to prevent injection
-          schemes=$(find . -name "*.xcscheme" -exec basename {} .xcscheme \; | \
-                   grep -E '^[a-zA-Z0-9_-]+$' | \
-                   jq -R -s -c 'split("\n")[:-1]')
-          echo "schemes=$schemes" >> $GITHUB_OUTPUT
-          
-  analyze-schemes:
-    runs-on: macos-latest
-    needs: detect-schemes
-    if: needs.detect-schemes.outputs.schemes != '[]'
-    
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-      checks: write
-      
     strategy:
-      fail-fast: false  # Continue with other schemes if one fails
+      fail-fast: false
       matrix:
-        scheme: ${{ fromJson(needs.detect-schemes.outputs.schemes) }}
+        scheme: [App, AppTests, AppUITests]
         
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        
-      - name: Setup Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '15.0'
-          
-      - name: Run SwiftConcur Analysis
-        id: swiftconcur
-        uses: ./
+      - uses: actions/checkout@v4
+      
+      - uses: swiftconcur/swiftconcur-ci@v1
         with:
           scheme: ${{ matrix.scheme }}
-          configuration: 'Debug'
-          threshold: '10'
-          format: 'json'
-          fail-on-error: 'false'  # Reliability: don't fail matrix on tool errors
-          retry-count: '3'
-          timeout: '30'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Upload scheme-specific results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: swiftconcur-${{ matrix.scheme }}-results
-          path: |
-            /tmp/warnings.json
-          retention-days: 30
-          
-      - name: Create scheme-specific check
-        uses: actions/github-script@v7
-        if: always()
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const warningCount = parseInt('${{ steps.swiftconcur.outputs.warning-count }}');
-            const success = '${{ steps.swiftconcur.outputs.success }}' === 'true';
-            
-            await github.rest.checks.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              name: `SwiftConcur Analysis - ${{ matrix.scheme }}`,
-              head_sha: context.sha,
-              status: 'completed',
-              conclusion: success && warningCount <= 10 ? 'success' : 'failure',
-              output: {
-                title: `${{ matrix.scheme }}: ${warningCount} warnings`,
-                summary: '${{ steps.swiftconcur.outputs.summary-markdown }}'
-              }
-            });
-            
-  consolidate-results:
-    runs-on: macos-latest
-    needs: [detect-schemes, analyze-schemes]
-    if: always()
-    
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-      
-    steps:
-      - name: Download all results
-        uses: actions/download-artifact@v4
-        with:
-          path: results/
-          
-      - name: Consolidate analysis results
-        run: |
-          # Security: Validate JSON before processing
-          total_warnings=0
-          failed_schemes=()
-          
-          for result_dir in results/swiftconcur-*-results; do
-            if [[ -f "$result_dir/warnings.json" ]]; then
-              scheme=$(basename "$result_dir" | sed 's/swiftconcur-\(.*\)-results/\1/')
-              warnings=$(jq -r '.count // 0' "$result_dir/warnings.json")
-              
-              if [[ "$warnings" =~ ^[0-9]+$ ]]; then
-                total_warnings=$((total_warnings + warnings))
-                echo "Scheme $scheme: $warnings warnings"
-              else
-                failed_schemes+=("$scheme")
-                echo "Scheme $scheme: Analysis failed"
-              fi
-            fi
-          done
-          
-          echo "TOTAL_WARNINGS=$total_warnings" >> $GITHUB_ENV
-          echo "FAILED_SCHEMES=${failed_schemes[*]}" >> $GITHUB_ENV
-          
-      - name: Post consolidated PR comment
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const totalWarnings = parseInt(process.env.TOTAL_WARNINGS);
-            const failedSchemes = process.env.FAILED_SCHEMES;
-            
-            let comment = '## SwiftConcur Multi-Scheme Analysis\n\n';
-            comment += `**Total warnings across all schemes: ${totalWarnings}**\n\n`;
-            
-            if (failedSchemes && failedSchemes.trim() !== '') {
-              comment += `⚠️ **Failed schemes:** ${failedSchemes}\n\n`;
-            }
-            
-            comment += 'Check individual scheme results in the artifacts for detailed analysis.';
-            
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
+          project-path: 'MyApp.xcodeproj'
+          fail-on-warnings: ${{ matrix.scheme == 'App' }}

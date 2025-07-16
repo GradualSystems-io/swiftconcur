@@ -1,0 +1,2 @@
+{"type": "warning", "message": "Type 'MyClass' does not conform to the 'Sendable' protocol", "file": "Sources/MyApp/MyClass.swift", "line": 15, "column": 7}
+{"type": "warning", "message": "capture of 'self' with non-sendable type 'MyService' requires 'Sendable' conformance", "file": "Sources/MyApp/MyService.swift", "line": 23, "column": 12}

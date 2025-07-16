@@ -1,0 +1,37 @@
+name: Test Action
+on:
+  push:
+    paths:
+      - 'action.yml'
+      - 'Dockerfile'
+      - 'entrypoint.sh'
+      - 'scripts/**'
+      - '.github/workflows/test-action.yml'
+
+jobs:
+  test-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Docker image
+        run: docker build -t swiftconcur-action .
+      
+      - name: Test entrypoint script
+        run: |
+          docker run --rm \
+            -e INPUT_SCHEME="TestScheme" \
+            -e INPUT_PROJECT_PATH="Test.xcodeproj" \
+            -e GITHUB_OUTPUT=/dev/null \
+            swiftconcur-action || echo "Expected failure"
+      
+      - name: Lint shell scripts
+        run: |
+          sudo apt-get install -y shellcheck
+          shellcheck entrypoint.sh scripts/*.sh
+      
+      - name: Test Node scripts
+        run: |
+          cd scripts
+          npm install
+          node -c post-comment.js

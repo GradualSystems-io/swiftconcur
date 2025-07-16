@@ -1,79 +1,85 @@
 name: 'SwiftConcur CI'
-description: 'Analyze Swift concurrency warnings in Xcode builds'
-author: 'Gradual Systems'
+description: 'Detect and track Swift concurrency warnings in your codebase'
+author: 'SwiftConcur'
+branding:
+  icon: 'check-circle'
+  color: 'orange'
 
 inputs:
   swift-version:
     description: 'Swift version to use'
     required: false
-    default: '5.9'
+    default: 'latest'
+  
   workspace-path:
-    description: 'Path to Xcode workspace or project'
+    description: 'Path to .xcworkspace file'
     required: false
-    default: '.'
+  
+  project-path:
+    description: 'Path to .xcodeproj file (if not using workspace)'
+    required: false
+  
   scheme:
     description: 'Xcode scheme to build'
     required: true
+  
   configuration:
     description: 'Build configuration (Debug/Release)'
     required: false
     default: 'Debug'
+  
   threshold:
-    description: 'Maximum number of warnings before failing'
+    description: 'Maximum allowed warnings (fail if exceeded)'
     required: false
     default: '0'
-  format:
-    description: 'Output format (json|markdown|slack)'
+  
+  baseline-path:
+    description: 'Path to baseline JSON for comparison'
     required: false
-    default: 'markdown'
-  fail-on-error:
-    description: 'Whether to fail the action on tool errors (false for reliability)'
+  
+  post-comment:
+    description: 'Post results as PR comment'
     required: false
-    default: 'false'
-  retry-count:
-    description: 'Number of retries for transient failures'
+    default: 'true'
+  
+  fail-on-warnings:
+    description: 'Fail the action if any warnings found'
+    required: false
+    default: 'true'
+  
+  context-lines:
+    description: 'Lines of code context to include'
     required: false
     default: '3'
-  timeout:
-    description: 'Timeout for build in minutes'
+  
+  github-token:
+    description: 'GitHub token for posting comments'
     required: false
-    default: '30'
+    default: ${{ github.token }}
 
 outputs:
   warning-count:
-    description: 'Number of concurrency warnings found'
-    value: ${{ steps.analyze.outputs.warning-count }}
+    description: 'Total number of warnings found'
+    value: ${{ steps.parse.outputs.warning-count }}
+  
   summary-markdown:
-    description: 'Markdown formatted summary'
-    value: ${{ steps.analyze.outputs.summary-markdown }}
+    description: 'Markdown summary of warnings'
+    value: ${{ steps.parse.outputs.summary-markdown }}
+  
   json-report:
-    description: 'Full JSON report'
-    value: ${{ steps.analyze.outputs.json-report }}
-  success:
-    description: 'Whether analysis completed successfully'
-    value: ${{ steps.analyze.outputs.success }}
+    description: 'Path to full JSON report'
+    value: ${{ steps.parse.outputs.json-report }}
+  
+  new-warnings:
+    description: 'Number of new warnings vs baseline'
+    value: ${{ steps.parse.outputs.new-warnings }}
+  
+  fixed-warnings:
+    description: 'Number of fixed warnings vs baseline'
+    value: ${{ steps.parse.outputs.fixed-warnings }}
 
 runs:
   using: 'docker'
   image: 'Dockerfile'
   env:
-    GITHUB_TOKEN: ${{ github.token }}
-    SWIFT_VERSION: ${{ inputs.swift-version }}
-    WORKSPACE_PATH: ${{ inputs.workspace-path }}
-    SCHEME: ${{ inputs.scheme }}
-    CONFIGURATION: ${{ inputs.configuration }}
-    THRESHOLD: ${{ inputs.threshold }}
-    FORMAT: ${{ inputs.format }}
-    FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
-    RETRY_COUNT: ${{ inputs.retry-count }}
-    TIMEOUT: ${{ inputs.timeout }}
-    GITHUB_REPOSITORY: ${{ github.repository }}
-    GITHUB_REF: ${{ github.ref }}
-    GITHUB_SHA: ${{ github.sha }}
-    GITHUB_EVENT_NAME: ${{ github.event_name }}
-    GITHUB_RUN_ID: ${{ github.run_id }}
-    GITHUB_RUN_NUMBER: ${{ github.run_number }}
-
-branding:
-  icon: 'shield'
-  color: 'blue'
+    GITHUB_TOKEN: ${{ inputs.github-token }}

@@ -7,3 +7,4 @@ target/
 # IDEs
 .idea/
 .vscode/
+/TestSwiftConcur
