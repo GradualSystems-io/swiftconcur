@@ -2,6 +2,7 @@ use crate::formatters::Formatter;
 use crate::models::WarningRun;
 use crate::error::Result;
 
+#[derive(Default)]  
 pub struct JsonFormatter;
 
 impl JsonFormatter {

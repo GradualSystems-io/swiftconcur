@@ -2,6 +2,7 @@ use crate::formatters::Formatter;
 use crate::models::{WarningRun, WarningType, Severity};
 use crate::error::Result;
 
+#[derive(Default)]
 pub struct MarkdownFormatter;
 
 impl MarkdownFormatter {
@@ -38,11 +39,11 @@ impl Formatter for MarkdownFormatter {
         output.push_str(&format!("**Generated:** {}\n\n", run.created_at.format("%Y-%m-%d %H:%M:%S UTC")));
         
         if let Some(commit) = &run.commit_sha {
-            output.push_str(&format!("**Commit:** `{}`\n", commit));
+            output.push_str(&format!("**Commit:** `{commit}`\n"));
         }
         
         if let Some(branch) = &run.branch {
-            output.push_str(&format!("**Branch:** `{}`\n", branch));
+            output.push_str(&format!("**Branch:** `{branch}`\n"));
         }
         
         output.push_str("\n## Warnings\n\n");
@@ -61,11 +62,11 @@ impl Formatter for MarkdownFormatter {
             if !warning.code_context.line.is_empty() {
                 output.push_str("```swift\n");
                 for line in &warning.code_context.before {
-                    output.push_str(&format!("  {}\n", line));
+                    output.push_str(&format!("  {line}\n"));
                 }
                 output.push_str(&format!("> {}\n", warning.code_context.line));
                 for line in &warning.code_context.after {
-                    output.push_str(&format!("  {}\n", line));
+                    output.push_str(&format!("  {line}\n"));
                 }
                 output.push_str("```\n\n");
             }

@@ -41,7 +41,7 @@ pub fn run(cli: Cli) -> Result<i32> {
     };
     
     let output = formatter.format(&run)?;
-    println!("{}", output);
+    println!("{output}");
     
     // Check threshold and return appropriate exit code
     let threshold_passed = check_threshold(&run.warnings, cli.threshold);

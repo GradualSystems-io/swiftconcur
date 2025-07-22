@@ -1,22 +1,14 @@
 use crate::formatters::Formatter;
-use crate::models::{WarningRun, WarningType, Severity};
+use crate::models::{WarningRun, WarningType};
 use crate::error::Result;
 use serde_json::json;
 
+#[derive(Default)]
 pub struct SlackFormatter;
 
 impl SlackFormatter {
     pub fn new() -> Self {
         Self
-    }
-    
-    fn severity_color(&self, severity: &Severity) -> &str {
-        match severity {
-            Severity::Critical => "danger",
-            Severity::High => "warning",
-            Severity::Medium => "#ff9500",
-            Severity::Low => "good",
-        }
     }
     
     fn warning_type_label(&self, warning_type: &WarningType) -> &str {

@@ -19,7 +19,7 @@ fn main() {
     match run(cli) {
         Ok(exit_code) => process::exit(exit_code),
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
             process::exit(2);
         }
     }

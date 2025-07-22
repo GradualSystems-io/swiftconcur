@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn test_actor_isolation_patterns() {
-        let messages = vec![
+        let messages = [
             "actor-isolated property 'shared' can not be referenced from a non-isolated context",
             "actor-isolated method 'updateData' cannot be called from non-isolated context", 
             "actor-isolated instance method 'process' can not be referenced",
@@ -79,8 +79,8 @@ mod tests {
         
         for (i, message) in messages.iter().enumerate() {
             let (warning_type, severity) = categorize_warning(message);
-            println!("Message {}: {} -> {:?}", i, message, warning_type);
-            assert_eq!(warning_type, WarningType::ActorIsolation, "Failed for message: {}", message);
+            println!("Message {i}: {message} -> {warning_type:?}");
+            assert_eq!(warning_type, WarningType::ActorIsolation, "Failed for message: {message}");
             assert!(matches!(severity, Severity::High | Severity::Medium));
         }
     }
