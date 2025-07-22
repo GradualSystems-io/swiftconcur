@@ -7,24 +7,34 @@ pub mod formatters;
 use cli::{Cli, OutputFormat};
 use error::Result;
 use models::WarningRun;
-use parser::{XcodeBuildParser, filter_warnings, check_threshold};
+use parser::{XcodeBuildParser, XcresultParser, filter_warnings, check_threshold};
 use formatters::{Formatter, JsonFormatter, MarkdownFormatter, SlackFormatter};
 use std::io::{self, BufReader};
 use std::fs::File;
 
 pub fn run(cli: Cli) -> Result<i32> {
-    // Create parser
-    let parser = XcodeBuildParser::new(cli.context);
-    
-    // Parse input
+    // Parse input - detect format and use appropriate parser
     let warnings = if cli.input == "-" {
         let stdin = io::stdin();
         let reader = BufReader::new(stdin.lock());
+        let parser = XcodeBuildParser::new(cli.context);
         parser.parse_stream(reader)?
     } else {
-        let file = File::open(&cli.input)?;
-        let reader = BufReader::new(file);
-        parser.parse_stream(reader)?
+        // Read file to detect format
+        let content = std::fs::read_to_string(&cli.input)?;
+        
+        // Try to detect if it's xcresult JSON format
+        if content.trim_start().starts_with('{') && content.contains("_values") && content.contains("IssueSummary") {
+            // Parse as xcresult JSON
+            let parser = XcresultParser::new(cli.context);
+            parser.parse_json(&content)?
+        } else {
+            // Parse as xcodebuild text output
+            let file = File::open(&cli.input)?;
+            let reader = BufReader::new(file);
+            let parser = XcodeBuildParser::new(cli.context);
+            parser.parse_stream(reader)?
+        }
     };
     
     // Filter warnings if requested
