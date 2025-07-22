@@ -1,0 +1,91 @@
+{
+  "_type": {
+    "_name": "Array"
+  },
+  "_values": [
+    {
+      "_type": {
+        "_name": "IssueSummary"
+      },
+      "documentLocationInCreatingWorkspace": {
+        "_type": {
+          "_name": "DocumentLocation"
+        },
+        "url": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "file:///Users/test/Sources/MyApp/DataManager.swift#EndingColumnNumber=20&EndingLineNumber=42&StartingColumnNumber=15&StartingLineNumber=42"
+        }
+      },
+      "issueType": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "Swift Compiler Warning"
+      },
+      "message": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "actor-isolated property 'shared' can not be referenced from a non-isolated context"
+      }
+    },
+    {
+      "_type": {
+        "_name": "IssueSummary"
+      },
+      "documentLocationInCreatingWorkspace": {
+        "_type": {
+          "_name": "DocumentLocation"
+        },
+        "url": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "file:///Users/test/Sources/MyApp/NetworkService.swift#EndingColumnNumber=15&EndingLineNumber=78&StartingColumnNumber=8&StartingLineNumber=78"
+        }
+      },
+      "issueType": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "Swift Compiler Warning"
+      },
+      "message": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "Type 'MyClass' does not conform to the 'Sendable' protocol"
+      }
+    },
+    {
+      "_type": {
+        "_name": "IssueSummary"
+      },
+      "documentLocationInCreatingWorkspace": {
+        "_type": {
+          "_name": "DocumentLocation"
+        },
+        "url": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "file:///Users/test/Sources/MyApp/ConcurrentProcessor.swift#EndingColumnNumber=25&EndingLineNumber=120&StartingColumnNumber=12&StartingLineNumber=120"
+        }
+      },
+      "issueType": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "Swift Compiler Warning"
+      },
+      "message": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "data race detected: concurrent access to shared mutable state"
+      }
+    }
+  ]
+}

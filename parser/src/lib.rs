@@ -24,7 +24,7 @@ pub fn run(cli: Cli) -> Result<i32> {
         let content = std::fs::read_to_string(&cli.input)?;
         
         // Try to detect if it's xcresult JSON format
-        if content.trim_start().starts_with('{') && content.contains("_values") && content.contains("IssueSummary") {
+        if content.trim_start().starts_with('{') && content.contains("_values") {
             // Parse as xcresult JSON
             let parser = XcresultParser::new(cli.context);
             parser.parse_json(&content)?

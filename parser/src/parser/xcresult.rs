@@ -68,6 +68,11 @@ impl XcresultParser {
                 let message = &issue.message.value;
                 let (warning_type, severity) = categorize_warning(message);
                 
+                // Skip non-concurrency warnings
+                if warning_type == crate::models::WarningType::Unknown {
+                    continue;
+                }
+                
                 // Try to read code context from file
                 let code_context = self.extract_code_context(file_path, line_number);
                 
@@ -130,7 +135,7 @@ impl XcresultParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::WarningType;
+    use crate::models::{WarningType, Severity};
 
     #[test]
     fn test_parse_xcresult_json() {
@@ -163,5 +168,203 @@ mod tests {
         assert!(warning.file_path.to_str().unwrap().ends_with("Item.swift"));
         assert_eq!(warning.warning_type, WarningType::ActorIsolation);
         assert!(warning.message.contains("Main actor-isolated"));
+    }
+
+    #[test]
+    fn test_parse_sendable_warning() {
+        let json_content = r#"
+        {
+            "_values": [
+                {
+                    "documentLocationInCreatingWorkspace": {
+                        "url": {
+                            "_value": "file:///test/NetworkService.swift#EndingLineNumber=78&StartingLineNumber=78"
+                        }
+                    },
+                    "issueType": {
+                        "_value": "Swift Compiler Warning"
+                    },
+                    "message": {
+                        "_value": "Type 'MyClass' does not conform to the 'Sendable' protocol"
+                    }
+                }
+            ]
+        }
+        "#;
+        
+        let parser = XcresultParser::new(2);
+        let warnings = parser.parse_json(json_content).unwrap();
+        
+        assert_eq!(warnings.len(), 1);
+        let warning = &warnings[0];
+        assert_eq!(warning.warning_type, WarningType::SendableConformance);
+        assert_eq!(warning.severity, Severity::High);
+        assert_eq!(warning.line_number, 78);
+    }
+
+    #[test]
+    fn test_parse_data_race_warning() {
+        let json_content = r#"
+        {
+            "_values": [
+                {
+                    "documentLocationInCreatingWorkspace": {
+                        "url": {
+                            "_value": "file:///test/ConcurrentCode.swift#EndingLineNumber=120&StartingLineNumber=120"
+                        }
+                    },
+                    "issueType": {
+                        "_value": "Swift Compiler Warning"
+                    },
+                    "message": {
+                        "_value": "data race detected: concurrent access to shared mutable state"
+                    }
+                }
+            ]
+        }
+        "#;
+        
+        let parser = XcresultParser::new(2);
+        let warnings = parser.parse_json(json_content).unwrap();
+        
+        assert_eq!(warnings.len(), 1);
+        let warning = &warnings[0];
+        assert_eq!(warning.warning_type, WarningType::DataRace);
+        assert_eq!(warning.severity, Severity::Critical);
+    }
+
+    #[test]
+    fn test_skip_non_warning_issues() {
+        let json_content = r#"
+        {
+            "_values": [
+                {
+                    "documentLocationInCreatingWorkspace": {
+                        "url": {
+                            "_value": "file:///test/Error.swift#EndingLineNumber=25&StartingLineNumber=25"
+                        }
+                    },
+                    "issueType": {
+                        "_value": "Swift Compiler Error"
+                    },
+                    "message": {
+                        "_value": "Use of unresolved identifier 'undefined'"
+                    }
+                },
+                {
+                    "documentLocationInCreatingWorkspace": {
+                        "url": {
+                            "_value": "file:///test/Warning.swift#EndingLineNumber=30&StartingLineNumber=30"
+                        }
+                    },
+                    "issueType": {
+                        "_value": "Swift Compiler Warning"
+                    },
+                    "message": {
+                        "_value": "Variable 'unused' was never used"
+                    }
+                }
+            ]
+        }
+        "#;
+        
+        let parser = XcresultParser::new(2);
+        let warnings = parser.parse_json(json_content).unwrap();
+        
+        // Should skip both: error and non-concurrency warning
+        assert_eq!(warnings.len(), 0);
+    }
+
+    #[test]
+    fn test_malformed_json() {
+        let parser = XcresultParser::new(2);
+        
+        let malformed_json = r#"{"invalid": json}"#;
+        assert!(parser.parse_json(malformed_json).is_err());
+        
+        let missing_values = r#"{"wrong_structure": []}"#;
+        assert!(parser.parse_json(missing_values).is_err());
+    }
+
+    #[test]
+    fn test_url_parsing_edge_cases() {
+        let json_content = r#"
+        {
+            "_values": [
+                {
+                    "documentLocationInCreatingWorkspace": {
+                        "url": {
+                            "_value": "invalid-url-format"
+                        }
+                    },
+                    "issueType": {
+                        "_value": "Swift Compiler Warning"
+                    },
+                    "message": {
+                        "_value": "actor-isolated property test"
+                    }
+                }
+            ]
+        }
+        "#;
+        
+        let parser = XcresultParser::new(2);
+        let warnings = parser.parse_json(json_content).unwrap();
+        
+        // Should skip warnings with unparseable URLs
+        assert_eq!(warnings.len(), 0);
+    }
+
+    #[test]
+    fn test_empty_xcresult() {
+        let json_content = r#"{"_values": []}"#;
+        
+        let parser = XcresultParser::new(2);
+        let warnings = parser.parse_json(json_content).unwrap();
+        
+        assert_eq!(warnings.len(), 0);
+    }
+
+    #[test]
+    fn test_multiple_warnings() {
+        let json_content = r#"
+        {
+            "_values": [
+                {
+                    "documentLocationInCreatingWorkspace": {
+                        "url": {
+                            "_value": "file:///test/File1.swift#EndingLineNumber=42&StartingLineNumber=42"
+                        }
+                    },
+                    "issueType": {
+                        "_value": "Swift Compiler Warning"
+                    },
+                    "message": {
+                        "_value": "actor-isolated property 'shared' can not be referenced"
+                    }
+                },
+                {
+                    "documentLocationInCreatingWorkspace": {
+                        "url": {
+                            "_value": "file:///test/File2.swift#EndingLineNumber=78&StartingLineNumber=78"
+                        }
+                    },
+                    "issueType": {
+                        "_value": "Swift Compiler Warning"
+                    },
+                    "message": {
+                        "_value": "Type 'MyClass' does not conform to the 'Sendable' protocol"
+                    }
+                }
+            ]
+        }
+        "#;
+        
+        let parser = XcresultParser::new(2);
+        let warnings = parser.parse_json(json_content).unwrap();
+        
+        assert_eq!(warnings.len(), 2);
+        assert_eq!(warnings[0].warning_type, WarningType::ActorIsolation);
+        assert_eq!(warnings[1].warning_type, WarningType::SendableConformance);
     }
 }
