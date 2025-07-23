@@ -497,7 +497,7 @@ jobs:
           context-lines: 5
       
       # Upload results
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: swiftconcur-results-${{ matrix.configuration }}
