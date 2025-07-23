@@ -1,6 +1,6 @@
+use super::CodeContext;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use super::CodeContext;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]

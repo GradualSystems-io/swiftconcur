@@ -1,11 +1,11 @@
+use crate::error::Result;
+use crate::models::{CodeContext, Warning};
+use crate::parser::patterns::categorize_warning;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::io::BufRead;
 use std::fs::File;
+use std::io::BufRead;
 use std::io::BufReader;
-use crate::models::{Warning, CodeContext};
-use crate::error::Result;
-use crate::parser::patterns::categorize_warning;
 use std::path::PathBuf;
 
 // XcodeBuild diagnostic structure based on actual xcodebuild JSON output
@@ -48,66 +48,69 @@ impl XcodeBuildParser {
     pub fn new(context_lines: usize) -> Self {
         Self { context_lines }
     }
-    
+
     pub fn parse_stream<R: BufRead>(&self, reader: R) -> Result<Vec<Warning>> {
         let mut warnings = Vec::new();
-        
+
         for line in reader.lines() {
             let line = line?;
             if line.trim().is_empty() {
                 continue;
             }
-            
+
             // Try to parse each line as JSON
             if let Some(warning) = self.parse_line(&line) {
                 warnings.push(warning);
             }
         }
-        
+
         Ok(warnings)
     }
-    
+
     fn parse_line(&self, line: &str) -> Option<Warning> {
         // Try parsing as XcodeBuildDiagnostic first
         if let Ok(diagnostic) = serde_json::from_str::<XcodeBuildDiagnostic>(line) {
             return self.extract_warning_from_diagnostic(&diagnostic);
         }
-        
+
         // Try parsing as XcodeBuildMessage
         if let Ok(message) = serde_json::from_str::<XcodeBuildMessage>(line) {
             return self.extract_warning_from_message(&message);
         }
-        
+
         // Try parsing as generic JSON and extract common fields
         if let Ok(json) = serde_json::from_str::<Value>(line) {
             return self.extract_warning_from_value(&json);
         }
-        
+
         None
     }
-    
-    fn extract_warning_from_diagnostic(&self, diagnostic: &XcodeBuildDiagnostic) -> Option<Warning> {
+
+    fn extract_warning_from_diagnostic(
+        &self,
+        diagnostic: &XcodeBuildDiagnostic,
+    ) -> Option<Warning> {
         // Only process warnings, not errors or notes
         if diagnostic.diagnostic_type != "warning" {
             return None;
         }
-        
+
         let message = &diagnostic.message;
         let (warning_type, severity) = categorize_warning(message);
-        
+
         // Only process Swift concurrency warnings
         if warning_type == crate::models::WarningType::Unknown {
             return None;
         }
-        
+
         let file_path = diagnostic.file.as_deref().unwrap_or("unknown");
         let line_number = diagnostic.line.unwrap_or(0) as usize;
         let column_number = diagnostic.column.map(|c| c as usize);
-        
+
         let id = format!("{}:{}:{}", file_path, line_number, message.len());
-        
+
         let code_context = self.extract_code_context(file_path, line_number);
-        
+
         Some(Warning {
             id,
             warning_type,
@@ -120,27 +123,27 @@ impl XcodeBuildParser {
             suggested_fix: self.suggest_fix(&warning_type, message),
         })
     }
-    
+
     fn extract_warning_from_message(&self, message: &XcodeBuildMessage) -> Option<Warning> {
         if message.message_type != "warning" {
             return None;
         }
-        
+
         let msg = &message.message;
         let (warning_type, severity) = categorize_warning(msg);
-        
+
         if warning_type == crate::models::WarningType::Unknown {
             return None;
         }
-        
+
         let file_path = message.file_path.as_deref().unwrap_or("unknown");
         let line_number = message.line_number.unwrap_or(0) as usize;
         let column_number = message.column_number.map(|c| c as usize);
-        
+
         let id = format!("{}:{}:{}", file_path, line_number, msg.len());
-        
+
         let code_context = self.extract_code_context(file_path, line_number);
-        
+
         Some(Warning {
             id,
             warning_type,
@@ -153,40 +156,43 @@ impl XcodeBuildParser {
             suggested_fix: self.suggest_fix(&warning_type, msg),
         })
     }
-    
+
     fn extract_warning_from_value(&self, json: &Value) -> Option<Warning> {
         // Check if it's a warning type
         let msg_type = json.get("type")?.as_str()?;
         if msg_type != "warning" {
             return None;
         }
-        
+
         let message = json.get("message")?.as_str()?;
         let (warning_type, severity) = categorize_warning(message);
-        
+
         if warning_type == crate::models::WarningType::Unknown {
             return None;
         }
-        
-        let file_path = json.get("file")
+
+        let file_path = json
+            .get("file")
             .or_else(|| json.get("filePath"))
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-            
-        let line_number = json.get("line")
+
+        let line_number = json
+            .get("line")
             .or_else(|| json.get("lineNumber"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
-            
-        let column_number = json.get("column")
+
+        let column_number = json
+            .get("column")
             .or_else(|| json.get("columnNumber"))
             .and_then(|v| v.as_u64())
             .map(|v| v as usize);
-        
+
         let id = format!("{}:{}:{}", file_path, line_number, message.len());
-        
+
         let code_context = self.extract_code_context(file_path, line_number);
-        
+
         Some(Warning {
             id,
             warning_type,
@@ -199,27 +205,31 @@ impl XcodeBuildParser {
             suggested_fix: self.suggest_fix(&warning_type, message),
         })
     }
-    
+
     fn extract_code_context(&self, file_path: &str, line_number: usize) -> CodeContext {
         // Try to read the actual file and extract context
         if let Ok(file) = File::open(file_path) {
             let reader = BufReader::new(file);
             let lines: Vec<String> = reader.lines().map(|l| l.unwrap_or_default()).collect();
-            
+
             if line_number > 0 && line_number <= lines.len() {
                 let target_line_idx = line_number - 1; // Convert to 0-based index
-                
+
                 let start_idx = target_line_idx.saturating_sub(self.context_lines);
                 let end_idx = std::cmp::min(target_line_idx + self.context_lines + 1, lines.len());
-                
+
                 let before: Vec<String> = lines[start_idx..target_line_idx].to_vec();
                 let line = lines.get(target_line_idx).cloned().unwrap_or_default();
                 let after: Vec<String> = lines[target_line_idx + 1..end_idx].to_vec();
-                
-                return CodeContext { before, line, after };
+
+                return CodeContext {
+                    before,
+                    line,
+                    after,
+                };
             }
         }
-        
+
         // Fallback to empty context
         CodeContext {
             before: Vec::new(),
@@ -227,10 +237,14 @@ impl XcodeBuildParser {
             after: Vec::new(),
         }
     }
-    
-    fn suggest_fix(&self, warning_type: &crate::models::WarningType, message: &str) -> Option<String> {
+
+    fn suggest_fix(
+        &self,
+        warning_type: &crate::models::WarningType,
+        message: &str,
+    ) -> Option<String> {
         use crate::models::WarningType;
-        
+
         match warning_type {
             WarningType::ActorIsolation => {
                 if message.contains("can not be referenced") || message.contains("cannot be referenced") {

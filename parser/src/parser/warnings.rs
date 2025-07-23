@@ -1,5 +1,5 @@
-use crate::models::{Warning, WarningType};
 use crate::cli::WarningTypeFilter;
+use crate::models::{Warning, WarningType};
 
 pub fn filter_warnings(warnings: Vec<Warning>, filter: Option<WarningTypeFilter>) -> Vec<Warning> {
     match filter {
@@ -10,7 +10,8 @@ pub fn filter_warnings(warnings: Vec<Warning>, filter: Option<WarningTypeFilter>
                 WarningTypeFilter::DataRace => WarningType::DataRace,
                 WarningTypeFilter::Performance => WarningType::PerformanceRegression,
             };
-            warnings.into_iter()
+            warnings
+                .into_iter()
                 .filter(|w| w.warning_type == target_type)
                 .collect()
         }

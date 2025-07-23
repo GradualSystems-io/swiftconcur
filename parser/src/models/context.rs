@@ -9,9 +9,13 @@ pub struct CodeContext {
 
 impl CodeContext {
     pub fn new(before: Vec<String>, line: String, after: Vec<String>) -> Self {
-        Self { before, line, after }
+        Self {
+            before,
+            line,
+            after,
+        }
     }
-    
+
     pub fn empty(line: String) -> Self {
         Self {
             before: Vec::new(),

@@ -1,8 +1,11 @@
-use swiftconcur_parser::{run, cli::{Cli, OutputFormat}};
-use swiftconcur_parser::parser::XcresultParser;
-use swiftconcur_parser::models::WarningType;
-use tempfile::NamedTempFile;
 use std::io::Write;
+use swiftconcur_parser::models::WarningType;
+use swiftconcur_parser::parser::XcresultParser;
+use swiftconcur_parser::{
+    cli::{Cli, OutputFormat},
+    run,
+};
+use tempfile::NamedTempFile;
 
 #[cfg(test)]
 mod integration_tests {
@@ -50,9 +53,13 @@ mod integration_tests {
     #[test]
     fn test_run_with_empty_xcresult_json() {
         let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, r#"{{
+        writeln!(
+            temp_file,
+            r#"{{
             "_values": []
-        }}"#).unwrap();
+        }}"#
+        )
+        .unwrap();
         temp_file.flush().unwrap();
 
         let cli = Cli {
@@ -164,13 +171,17 @@ mod xcresult_parser_tests {
     fn test_parse_single_warning_xcresult() {
         let parser = XcresultParser::new(3);
         let json_content = include_str!("fixtures/xcresult_single_warning.json");
-        
+
         let warnings = parser.parse_json(json_content).unwrap();
         assert_eq!(warnings.len(), 1);
-        
+
         let warning = &warnings[0];
         assert_eq!(warning.line_number, 45);
-        assert!(warning.file_path.to_str().unwrap().contains("ContentView.swift"));
+        assert!(warning
+            .file_path
+            .to_str()
+            .unwrap()
+            .contains("ContentView.swift"));
         assert_eq!(warning.warning_type, WarningType::ActorIsolation);
         assert!(warning.message.contains("Main actor-isolated"));
     }
@@ -179,10 +190,10 @@ mod xcresult_parser_tests {
     fn test_parse_multiple_warnings_xcresult() {
         let parser = XcresultParser::new(3);
         let json_content = include_str!("fixtures/xcresult_multiple_warnings.json");
-        
+
         let warnings = parser.parse_json(json_content).unwrap();
         assert_eq!(warnings.len(), 3);
-        
+
         // Check warning types are correctly categorized
         assert_eq!(warnings[0].warning_type, WarningType::ActorIsolation);
         assert_eq!(warnings[1].warning_type, WarningType::SendableConformance);
@@ -193,7 +204,7 @@ mod xcresult_parser_tests {
     fn test_parse_empty_xcresult() {
         let parser = XcresultParser::new(3);
         let json_content = include_str!("fixtures/xcresult_empty.json");
-        
+
         let warnings = parser.parse_json(json_content).unwrap();
         assert_eq!(warnings.len(), 0);
     }
@@ -202,7 +213,7 @@ mod xcresult_parser_tests {
     fn test_parse_xcresult_filters_non_warnings() {
         let parser = XcresultParser::new(3);
         let json_content = include_str!("fixtures/xcresult_errors_only.json");
-        
+
         let warnings = parser.parse_json(json_content).unwrap();
         // Should filter out the compiler error and non-concurrency warning
         assert_eq!(warnings.len(), 0);
@@ -228,13 +239,17 @@ mod xcresult_parser_tests {
                 }
             ]
         }"#;
-        
+
         let warnings = parser.parse_json(json_content).unwrap();
         assert_eq!(warnings.len(), 1);
-        
+
         let warning = &warnings[0];
         assert_eq!(warning.line_number, 123);
-        assert!(warning.file_path.to_str().unwrap().ends_with("Controller.swift"));
+        assert!(warning
+            .file_path
+            .to_str()
+            .unwrap()
+            .ends_with("Controller.swift"));
         assert_eq!(warning.warning_type, WarningType::ActorIsolation);
     }
 
@@ -242,7 +257,7 @@ mod xcresult_parser_tests {
     fn test_xcresult_malformed_json() {
         let parser = XcresultParser::new(3);
         let malformed_json = r#"{"invalid": "json", "missing_values"}"#;
-        
+
         let result = parser.parse_json(malformed_json);
         assert!(result.is_err());
     }
@@ -267,7 +282,7 @@ mod xcresult_parser_tests {
                 }
             ]
         }"#;
-        
+
         let warnings = parser.parse_json(json_content).unwrap();
         // Should skip warnings with unparseable URLs
         assert_eq!(warnings.len(), 0);
@@ -287,9 +302,11 @@ mod format_detection_tests {
         ];
 
         for content in &xcresult_indicators {
-            let is_xcresult = content.trim_start().starts_with('{') 
-                && content.contains("_values");
-            assert!(is_xcresult, "Failed to detect xcresult format for: {content}");
+            let is_xcresult = content.trim_start().starts_with('{') && content.contains("_values");
+            assert!(
+                is_xcresult,
+                "Failed to detect xcresult format for: {content}"
+            );
         }
     }
 
@@ -302,18 +319,21 @@ mod format_detection_tests {
         ];
 
         for content in &xcodebuild_samples {
-            let is_xcresult = content.trim_start().starts_with('{') 
-                && content.contains("_values") 
+            let is_xcresult = content.trim_start().starts_with('{')
+                && content.contains("_values")
                 && content.contains("IssueSummary");
-            assert!(!is_xcresult, "Incorrectly detected xcresult format for: {content}");
+            assert!(
+                !is_xcresult,
+                "Incorrectly detected xcresult format for: {content}"
+            );
         }
     }
 }
 
 #[cfg(test)]
 mod cli_integration_tests {
-    use std::process::Command;
     use std::fs;
+    use std::process::Command;
 
     #[test]
     #[ignore] // Requires built binary
@@ -321,7 +341,7 @@ mod cli_integration_tests {
         // Create a temporary xcresult file
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_path = temp_dir.path().join("test_warnings.json");
-        
+
         let content = r#"{
             "_values": [
                 {
@@ -339,7 +359,7 @@ mod cli_integration_tests {
                 }
             ]
         }"#;
-        
+
         fs::write(&temp_path, content).unwrap();
 
         // Test the CLI binary
@@ -361,7 +381,7 @@ mod cli_integration_tests {
     fn test_cli_with_empty_xcresult_file() {
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_path = temp_dir.path().join("empty_warnings.json");
-        
+
         let content = r#"{"_values": []}"#;
         fs::write(&temp_path, content).unwrap();
 

@@ -1,8 +1,8 @@
+use crate::error::Result;
 use crate::formatters::Formatter;
 use crate::models::WarningRun;
-use crate::error::Result;
 
-#[derive(Default)]  
+#[derive(Default)]
 pub struct JsonFormatter;
 
 impl JsonFormatter {

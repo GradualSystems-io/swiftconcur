@@ -1,9 +1,9 @@
+pub mod patterns;
+pub mod warnings;
 pub mod xcodebuild;
 pub mod xcresult;
-pub mod warnings;
-pub mod patterns;
 
+pub use patterns::*;
+pub use warnings::*;
 pub use xcodebuild::*;
 pub use xcresult::*;
-pub use warnings::*;
-pub use patterns::*;

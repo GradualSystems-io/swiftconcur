@@ -2,8 +2,8 @@ pub mod json;
 pub mod markdown;
 pub mod slack;
 
-use crate::models::WarningRun;
 use crate::error::Result;
+use crate::models::WarningRun;
 
 pub trait Formatter {
     fn format(&self, run: &WarningRun) -> Result<String>;
