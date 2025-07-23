@@ -6,11 +6,11 @@ use std::path::PathBuf;
 #[command(about = "Parse Swift concurrency warnings from xcodebuild output")]
 pub struct Cli {
     /// Input file (use - for stdin)
-    #[arg(default_value = "-")]
+    #[arg(short = 'f', long = "file", default_value = "-")]
     pub input: String,
     
     /// Output format
-    #[arg(short, long, value_enum, default_value = "json")]
+    #[arg(long = "format", value_enum, default_value = "json")]
     pub format: OutputFormat,
     
     /// Baseline file for comparison
