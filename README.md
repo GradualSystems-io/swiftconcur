@@ -75,6 +75,69 @@ jobs:
 | `json-report` | Full JSON report path |
 
 
+## Standalone CLI Usage
+
+You can also use the SwiftConcur CLI directly without GitHub Actions:
+
+### 1. Configure Your iOS Project Build
+
+Add these build settings to enable concurrency warnings:
+
+```bash
+# Build your iOS project with concurrency warnings enabled
+xcodebuild \
+  -scheme YourScheme \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  SWIFT_VERSION=5.10 \
+  SWIFT_STRICT_CONCURRENCY=targeted \
+  OTHER_SWIFT_FLAGS="-Xfrontend -warn-concurrency" \
+  -resultBundlePath build.xcresult
+```
+
+### 2. Extract Warnings to JSON
+
+```bash
+# Extract concurrency warnings from the build results
+xcrun xcresulttool get object --path build.xcresult --format json --legacy |
+jq '.actions._values[0].buildResult.issues.warningSummaries' > warnings.json
+```
+
+### 3. Run SwiftConcur CLI
+
+```bash
+# Download and run the CLI
+curl -Ls https://github.com/GradualSystems-io/swiftconcur/releases/latest/download/swiftconcur-cli-macos-x86_64.tar.gz | tar xz
+./swiftconcur-cli -f warnings.json --format markdown
+```
+
+### CLI Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-f, --file` | JSON file with warnings | `warnings.json` |
+| `--format` | Output format (json, markdown, slack) | `json` |
+| `--baseline` | Baseline file for comparison | - |
+| `--threshold` | Maximum warnings allowed | `0` |
+| `--context-lines` | Lines of code context | `3` |
+
+### Integration with PR Comments
+
+To automatically add each warning/error to your PR:
+
+1. **Run the build and extract warnings** (steps 1-2 above)
+2. **Generate markdown output**:
+   ```bash
+   ./swiftconcur-cli -f warnings.json --format markdown > warnings.md
+   ```
+3. **Post to PR** using GitHub CLI or API:
+   ```bash
+   # Using GitHub CLI
+   gh pr comment $PR_NUMBER --body-file warnings.md
+   
+   # Or append to existing PR body
+   gh pr edit $PR_NUMBER --body "$(gh pr view $PR_NUMBER --json body -q .body)\n\n$(cat warnings.md)"
+   ```
+
 ## Examples
 
 See the [examples directory](.github/workflows/examples/) for common use cases.
