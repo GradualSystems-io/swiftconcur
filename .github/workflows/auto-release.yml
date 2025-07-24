@@ -128,16 +128,16 @@ jobs:
           
           ```bash
           # From xcresult JSON (recommended)
-          ./swiftconcur-cli warnings.json --format markdown
+          ./swiftconcur-cli -f warnings.json --format markdown
           
           # From raw xcodebuild output
           xcodebuild ... 2>&1 | ./swiftconcur-cli --format json
           
           # Set warning threshold
-          ./swiftconcur-cli warnings.json --threshold 5
+          ./swiftconcur-cli -f warnings.json --threshold 5
           
           # Filter specific warning types
-          ./swiftconcur-cli warnings.json --filter actor-isolation
+          ./swiftconcur-cli -f warnings.json --filter actor-isolation
           ```
           
           ## Options
@@ -159,9 +159,21 @@ jobs:
           tar -tzf swiftconcur-cli-${OS_NAME}-${{ matrix.arch }}.tar.gz
       
       - name: Upload build artifact
+        run: |
+          # Get the OS name for consistent naming
+          if [[ "${{ matrix.os }}" == "windows-"* ]]; then
+            OS_NAME="windows"
+          elif [[ "${{ matrix.os }}" == "macos-"* ]]; then
+            OS_NAME="macos"
+          else
+            OS_NAME="linux"
+          fi
+          echo "ARTIFACT_NAME=swiftconcur-cli-${OS_NAME}-${{ matrix.arch }}" >> $GITHUB_ENV
+      
+      - name: Upload tarball artifact
         uses: actions/upload-artifact@v4
         with:
-          name: swiftconcur-cli-${{ matrix.os }}-${{ matrix.arch }}
+          name: ${{ env.ARTIFACT_NAME }}
           path: swiftconcur-cli-*.tar.gz
           retention-days: 1
 
@@ -218,7 +230,7 @@ jobs:
           \`\`\`bash
           # Extract and use
           curl -Ls https://github.com/GradualSystems-io/swiftconcur/releases/latest/download/swiftconcur-cli-macos-x86_64.tar.gz | tar xz
-          ./swiftconcur-cli warnings.json --format markdown
+          ./swiftconcur-cli -f warnings.json --format markdown
           \`\`\`
           
           Full SHA: \`$(git rev-parse HEAD)\`
@@ -228,8 +240,11 @@ jobs:
         run: |
           mkdir -p release-assets
           
-          # Move all tarballs to release assets directory
-          find . -name "swiftconcur-cli-*.tar.gz" -exec cp {} release-assets/ \;
+          echo "Downloaded artifacts structure:"
+          find . -name "*.tar.gz" -type f
+          
+          # Move all tarballs to release assets directory from artifact folders
+          find . -name "*.tar.gz" -type f -exec cp {} release-assets/ \;
           
           echo "Release assets:"
           ls -la release-assets/
