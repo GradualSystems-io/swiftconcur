@@ -1,19 +1,30 @@
-# Phase 3: Cloudflare Workers API - Detailed Implementation Guide
+# Phase 3: Cloudflare Workers API - Enhanced Implementation Guide
 
 ## Overview
-Build a serverless API using Cloudflare Workers to process GitHub Action results, store data in Supabase, generate AI summaries, and send notifications.
+Build a serverless API using Cloudflare Workers to process GitHub Action results, store data in Supabase, generate AI summaries, and send notifications. This implementation focuses on low-latency responses and efficient data handling.
 
 ## Architecture
 
 ```
-GitHub Action → Webhook → Cloudflare Worker
-                             ↓
-                         Supabase DB
-                             ↓
-                      OpenAI Summary
-                             ↓
-                    Slack/Teams/Email
+GitHub Action ─┐        ┌─► Supabase Postgres  ──► Metabase
+              │        │                        (internal BI)
+              ▼        │
+   Cloudflare R2 (raw xcresult as object-store)
+              │        │
+              ▼        │
+   Cloudflare Worker  ─┤  (Durable Object shard key = repo_id)
+              │        ├─► OpenAI API (async via Queues)
+              ▼        │
+        Webhook Fan-out ➡ Slack / MS Teams / e-mail
 ```
+
+## HTTP Contract
+
+| Verb | Path | Auth | Body | 2xx Response |
+|------|------|------|------|--------------|
+| POST | /v1/warnings | Authorization: Bearer <repo-token> | multipart-form with fields: repo_id, run_id, warnings.json (≤ 50 KB) | { "status":"queued", "id":"<uuid>" } |
+| GET | /v1/runs/{run_id} | same | – | full run JSON incl. AI summary |
+| GET | /v1/repos/{repo_id}/trend | same | – | aggregate counts (7,30,90 d) |
 
 ## Project Structure
 ```
@@ -22,29 +33,84 @@ api/
 │   ├── index.ts              # Main worker entry point
 │   ├── handlers/
 │   │   ├── webhook.ts        # GitHub webhook handler
-│   │   ├── summary.ts        # AI summarization handler
-│   │   └── notifications.ts  # Notification dispatcher
+│   │   ├── warnings.ts       # Warning ingestion handler
+│   │   ├── runs.ts          # Run retrieval handler
+│   │   └── trends.ts        # Trend aggregation handler
 │   ├── services/
 │   │   ├── supabase.ts      # Supabase client & queries
 │   │   ├── openai.ts        # OpenAI integration
-│   │   ├── slack.ts         # Slack notifications
-│   │   └── teams.ts         # Teams notifications
+│   │   ├── r2.ts            # R2 storage operations
+│   │   └── notifications/
+│   │       ├── slack.ts     # Slack notifications
+│   │       ├── teams.ts     # Teams notifications
+│   │       └── email.ts     # Email notifications
 │   ├── models/
 │   │   ├── warning.ts       # Warning data models
 │   │   ├── repository.ts    # Repository models
 │   │   └── notification.ts  # Notification models
 │   ├── middleware/
-│   │   ├── auth.ts          # Authentication
-│   │   ├── rateLimit.ts     # Rate limiting
+│   │   ├── auth.ts          # Bearer token validation
+│   │   ├── rateLimit.ts     # Rate limiting with KV
 │   │   └── cors.ts          # CORS handling
+│   ├── durable-objects/
+│   │   └── RepoShard.ts     # Per-repo state management
 │   └── utils/
-│       ├── crypto.ts        # Webhook signature verification
+│       ├── crypto.ts        # Token generation/validation
 │       └── formatter.ts     # Message formatting
 ├── wrangler.toml            # Cloudflare Worker config
 ├── package.json
 ├── tsconfig.json
 └── tests/
     └── worker.test.ts
+```
+
+## Database Schema (Supabase)
+
+```sql
+CREATE TABLE repos(
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text UNIQUE NOT NULL,
+  tier text DEFAULT 'free' CHECK (tier IN ('free', 'pro', 'enterprise'))
+);
+
+CREATE TABLE runs(
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  repo_id uuid REFERENCES repos(id) NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  warnings_count int NOT NULL DEFAULT 0,
+  ai_summary text,
+  r2_object_key text -- Reference to full data in R2
+);
+
+CREATE TABLE warnings(
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id uuid REFERENCES runs(id) NOT NULL,
+  file_path text NOT NULL,
+  line int NOT NULL,
+  column int,
+  type text NOT NULL,
+  severity text NOT NULL,
+  message text NOT NULL,
+  code_context jsonb,
+  suggested_fix text
+);
+
+-- Indexes for performance
+CREATE INDEX idx_warnings_run_id ON warnings(run_id);
+CREATE INDEX idx_runs_repo_created ON runs(repo_id, created_at DESC);
+
+-- Materialized view for trend queries
+CREATE MATERIALIZED VIEW repo_warning_daily AS
+SELECT 
+  repo_id,
+  DATE(created_at) as date,
+  COUNT(DISTINCT run_id) as run_count,
+  SUM(warnings_count) as total_warnings,
+  AVG(warnings_count) as avg_warnings
+FROM runs
+GROUP BY repo_id, DATE(created_at);
+
+CREATE INDEX idx_repo_warning_daily ON repo_warning_daily(repo_id, date);
 ```
 
 ## Implementation Steps
@@ -56,24 +122,57 @@ npm create cloudflare@latest api
 # TypeScript: Yes
 # Git: Yes
 # Deploy: No
+
+cd api
+npm install @supabase/supabase-js openai zod itty-router
+npm install -D @cloudflare/workers-types vitest
 ```
 
-### 2. Update wrangler.toml
+### 2. Configure wrangler.toml
 ```toml
 name = "swiftconcur-api"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
+# R2 bucket for storing raw xcresult files
+[[r2_buckets]]
+binding = "XCRESULT_BUCKET"
+bucket_name = "swiftconcur-xcresults"
+
+# KV namespaces
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "your-rate-limit-kv-id"
+
+[[kv_namespaces]]
+binding = "API_TOKENS"
+id = "your-api-tokens-kv-id"
+
+# Durable Objects
+[[durable_objects.bindings]]
+name = "REPO_SHARD"
+class_name = "RepoShard"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["RepoShard"]
+
+# Queues for async processing
+[[queues.producers]]
+binding = "AI_QUEUE"
+queue = "ai-processing"
+
+[[queues.consumers]]
+queue = "ai-processing"
+max_batch_size = 10
+max_batch_timeout = 30
+
+# Environment-specific settings
 [env.production]
 vars = { ENVIRONMENT = "production" }
 
 [env.development]
 vars = { ENVIRONMENT = "development" }
-
-# KV namespaces for rate limiting
-[[kv_namespaces]]
-binding = "RATE_LIMIT"
-id = "your-kv-namespace-id"
 
 # Secrets (set via wrangler secret put)
 # SUPABASE_URL
@@ -81,105 +180,31 @@ id = "your-kv-namespace-id"
 # OPENAI_API_KEY
 # SLACK_WEBHOOK_URL
 # TEAMS_WEBHOOK_URL
-# WEBHOOK_SECRET
 ```
 
-### 3. Core Dependencies (package.json)
-```json
-{
-  "name": "swiftconcur-api",
-  "version": "1.0.0",
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.0.0",
-    "wrangler": "^3.0.0",
-    "typescript": "^5.0.0",
-    "vitest": "^1.0.0"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
-    "openai": "^4.0.0",
-    "zod": "^3.22.0"
-  }
-}
-```
-
-### 4. Environment Types (src/types.ts)
-```typescript
-export interface Env {
-  // KV Namespaces
-  RATE_LIMIT: KVNamespace;
-  
-  // Secrets
-  SUPABASE_URL: string;
-  SUPABASE_SERVICE_KEY: string;
-  OPENAI_API_KEY: string;
-  SLACK_WEBHOOK_URL: string;
-  TEAMS_WEBHOOK_URL: string;
-  WEBHOOK_SECRET: string;
-  
-  // Variables
-  ENVIRONMENT: 'development' | 'production';
-}
-
-export interface WebhookPayload {
-  action: 'completed';
-  repository: {
-    id: number;
-    name: string;
-    full_name: string;
-    owner: {
-      login: string;
-      id: number;
-    };
-  };
-  commit_sha: string;
-  branch: string;
-  pull_request?: number;
-  warnings: Warning[];
-  metadata: {
-    scheme: string;
-    configuration: string;
-    swift_version: string;
-    timestamp: string;
-  };
-}
-
-export interface Warning {
-  id: string;
-  type: 'actor_isolation' | 'sendable' | 'data_race' | 'performance';
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  file_path: string;
-  line_number: number;
-  column_number?: number;
-  message: string;
-  code_context: {
-    before: string[];
-    line: string;
-    after: string[];
-  };
-  suggested_fix?: string;
-}
-```
-
-### 5. Main Worker Entry Point (src/index.ts)
+### 3. Main Worker Entry Point (src/index.ts)
 ```typescript
 import { Router } from 'itty-router';
-import { webhookHandler } from './handlers/webhook';
-import { summaryHandler } from './handlers/summary';
+import { handleWarnings } from './handlers/warnings';
+import { handleRun } from './handlers/runs';
+import { handleTrend } from './handlers/trends';
 import { authMiddleware } from './middleware/auth';
 import { rateLimitMiddleware } from './middleware/rateLimit';
 import { corsMiddleware } from './middleware/cors';
 import { Env } from './types';
 
+export { RepoShard } from './durable-objects/RepoShard';
+
 const router = Router();
 
 // Middleware
 router.all('*', corsMiddleware);
-router.all('/api/*', rateLimitMiddleware);
+router.all('/v1/*', rateLimitMiddleware, authMiddleware);
 
 // Routes
-router.post('/api/webhook', authMiddleware, webhookHandler);
-router.get('/api/summary/:repo_id/:run_id', summaryHandler);
+router.post('/v1/warnings', handleWarnings);
+router.get('/v1/runs/:run_id', handleRun);
+router.get('/v1/repos/:repo_id/trend', handleTrend);
 
 // Health check
 router.get('/health', () => new Response('OK', { status: 200 }));
@@ -187,44 +212,65 @@ router.get('/health', () => new Response('OK', { status: 200 }));
 // 404 handler
 router.all('*', () => new Response('Not Found', { status: 404 }));
 
+// Queue handler for async AI processing
+export async function queue(
+  batch: MessageBatch<any>,
+  env: Env,
+  ctx: ExecutionContext
+): Promise<void> {
+  for (const message of batch.messages) {
+    try {
+      await processAISummary(message.body, env);
+      message.ack();
+    } catch (error) {
+      console.error('AI processing error:', error);
+      message.retry();
+    }
+  }
+}
+
 export default {
-  fetch(request: Request, env: Env, ctx: ExecutionContext) {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     return router.handle(request, env, ctx)
       .catch(err => {
         console.error('Worker error:', err);
         return new Response('Internal Server Error', { status: 500 });
       });
   },
+  queue,
 };
 ```
 
-### 6. Webhook Handler (src/handlers/webhook.ts)
+### 4. Warning Ingestion Handler (src/handlers/warnings.ts)
 ```typescript
 import { z } from 'zod';
-import { Env, WebhookPayload } from '../types';
-import { verifyWebhookSignature } from '../utils/crypto';
+import { Env } from '../types';
+import { uploadToR2 } from '../services/r2';
 import { storeWarnings } from '../services/supabase';
-import { generateSummary } from '../services/openai';
-import { sendNotifications } from '../handlers/notifications';
 
-const WebhookSchema = z.object({
-  action: z.literal('completed'),
-  repository: z.object({
-    id: z.number(),
-    name: z.string(),
-    full_name: z.string(),
-    owner: z.object({
-      login: z.string(),
-      id: z.number(),
-    }),
-  }),
-  commit_sha: z.string(),
-  branch: z.string(),
-  pull_request: z.number().optional(),
+const MAX_JSON_SIZE = 50 * 1024; // 50 KB
+
+const WarningSchema = z.object({
+  repo_id: z.string().uuid(),
+  run_id: z.string().uuid(),
   warnings: z.array(z.object({
-    // Warning schema
+    type: z.enum(['actor_isolation', 'sendable', 'data_race', 'performance']),
+    severity: z.enum(['critical', 'high', 'medium', 'low']),
+    file_path: z.string(),
+    line_number: z.number(),
+    column_number: z.number().optional(),
+    message: z.string(),
+    code_context: z.object({
+      before: z.array(z.string()),
+      line: z.string(),
+      after: z.array(z.string()),
+    }),
+    suggested_fix: z.string().optional(),
   })),
   metadata: z.object({
+    commit_sha: z.string(),
+    branch: z.string(),
+    pull_request: z.number().optional(),
     scheme: z.string(),
     configuration: z.string(),
     swift_version: z.string(),
@@ -232,226 +278,174 @@ const WebhookSchema = z.object({
   }),
 });
 
-export async function webhookHandler(
+export async function handleWarnings(
   request: Request,
   env: Env,
   ctx: ExecutionContext
 ): Promise<Response> {
   try {
-    // Verify webhook signature
-    const body = await request.text();
-    const signature = request.headers.get('X-Hub-Signature-256');
+    // Parse multipart form data
+    const formData = await request.formData();
+    const warningsJson = formData.get('warnings.json') as File;
     
-    if (!signature || !await verifyWebhookSignature(body, signature, env.WEBHOOK_SECRET)) {
-      return new Response('Unauthorized', { status: 401 });
+    if (!warningsJson) {
+      return new Response('Missing warnings.json', { status: 400 });
     }
     
-    // Parse and validate payload
-    const payload = WebhookSchema.parse(JSON.parse(body));
+    // Check file size
+    if (warningsJson.size > MAX_JSON_SIZE) {
+      return new Response('File too large', { status: 413 });
+    }
     
-    // Store in database
-    const runId = await storeWarnings(env, payload);
+    // Parse and validate
+    const data = JSON.parse(await warningsJson.text());
+    const validated = WarningSchema.parse(data);
     
-    // Generate AI summary (async - don't block response)
+    // Store raw data in R2 for archival
+    const r2Key = `${validated.repo_id}/${validated.run_id}/warnings.json`;
+    await uploadToR2(env.XCRESULT_BUCKET, r2Key, warningsJson);
+    
+    // Store structured data in Supabase
+    await storeWarnings(env, validated, r2Key);
+    
+    // Queue AI summary generation (non-blocking)
     ctx.waitUntil(
-      generateAndNotify(env, payload, runId)
+      env.AI_QUEUE.send({
+        repo_id: validated.repo_id,
+        run_id: validated.run_id,
+        warnings: validated.warnings,
+      })
     );
     
-    return new Response(JSON.stringify({ 
-      success: true, 
-      run_id: runId 
+    // Get repo shard for real-time updates
+    const repoShardId = env.REPO_SHARD.idFromName(validated.repo_id);
+    const repoShard = env.REPO_SHARD.get(repoShardId);
+    
+    // Notify connected clients via Durable Object
+    ctx.waitUntil(
+      repoShard.fetch(new Request('https://internal/notify', {
+        method: 'POST',
+        body: JSON.stringify({ run_id: validated.run_id }),
+      }))
+    );
+    
+    return new Response(JSON.stringify({
+      status: 'queued',
+      id: validated.run_id,
     }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
+      status: 202,
+      headers: { 'Content-Type': 'application/json' },
     });
     
   } catch (error) {
-    console.error('Webhook error:', error);
+    console.error('Warning ingestion error:', error);
     
     if (error instanceof z.ZodError) {
-      return new Response(JSON.stringify({ 
-        error: 'Invalid payload', 
-        details: error.errors 
-      }), { 
+      return new Response(JSON.stringify({
+        error: 'Invalid payload',
+        details: error.errors,
+      }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       });
     }
     
     return new Response('Internal Server Error', { status: 500 });
   }
 }
-
-async function generateAndNotify(
-  env: Env, 
-  payload: WebhookPayload, 
-  runId: string
-): Promise<void> {
-  try {
-    // Generate AI summary
-    const summary = await generateSummary(env, payload);
-    
-    // Send notifications
-    await sendNotifications(env, {
-      ...payload,
-      run_id: runId,
-      summary
-    });
-  } catch (error) {
-    console.error('Background processing error:', error);
-  }
-}
 ```
 
-### 7. Supabase Integration (src/services/supabase.ts)
+### 5. Durable Object for Per-Repo State (src/durable-objects/RepoShard.ts)
 ```typescript
-import { createClient } from '@supabase/supabase-js';
-import { Env, WebhookPayload } from '../types';
-
-export async function storeWarnings(
-  env: Env,
-  payload: WebhookPayload
-): Promise<string> {
-  const supabase = createClient(
-    env.SUPABASE_URL,
-    env.SUPABASE_SERVICE_KEY
-  );
+export class RepoShard implements DurableObject {
+  private state: DurableObjectState;
+  private env: Env;
+  private connections: Set<WebSocket> = new Set();
   
-  // Check if repository exists
-  let { data: repo } = await supabase
-    .from('repositories')
-    .select('id')
-    .eq('github_id', payload.repository.id)
-    .single();
+  constructor(state: DurableObjectState, env: Env) {
+    this.state = state;
+    this.env = env;
+  }
   
-  // Create repository if it doesn't exist
-  if (!repo) {
-    const { data: org } = await supabase
-      .from('organizations')
-      .upsert({
-        github_id: payload.repository.owner.id,
-        name: payload.repository.owner.login
-      })
-      .select('id')
-      .single();
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
     
-    const { data: newRepo } = await supabase
-      .from('repositories')
-      .insert({
-        github_id: payload.repository.id,
-        org_id: org.id,
-        name: payload.repository.name,
-        full_name: payload.repository.full_name
-      })
-      .select('id')
-      .single();
+    switch (url.pathname) {
+      case '/websocket':
+        return this.handleWebSocket(request);
+      case '/notify':
+        return this.handleNotify(request);
+      default:
+        return new Response('Not Found', { status: 404 });
+    }
+  }
+  
+  async handleWebSocket(request: Request): Response {
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
     
-    repo = newRepo;
+    this.state.acceptWebSocket(server);
+    this.connections.add(server);
+    
+    server.addEventListener('close', () => {
+      this.connections.delete(server);
+    });
+    
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+    });
   }
   
-  // Create warning run
-  const { data: run } = await supabase
-    .from('warning_runs')
-    .insert({
-      repo_id: repo.id,
-      commit_sha: payload.commit_sha,
-      branch: payload.branch,
-      pull_request: payload.pull_request,
-      total_warnings: payload.warnings.length,
-      metadata: payload.metadata
-    })
-    .select('id')
-    .single();
-  
-  // Insert warnings
-  if (payload.warnings.length > 0) {
-    await supabase
-      .from('warnings')
-      .insert(
-        payload.warnings.map(warning => ({
-          run_id: run.id,
-          type: warning.type,
-          severity: warning.severity,
-          file_path: warning.file_path,
-          line_number: warning.line_number,
-          column_number: warning.column_number,
-          message: warning.message,
-          code_context: warning.code_context,
-          suggested_fix: warning.suggested_fix
-        }))
-      );
+  async handleNotify(request: Request): Response {
+    const data = await request.json();
+    
+    // Broadcast to all connected clients
+    for (const ws of this.connections) {
+      ws.send(JSON.stringify({
+        type: 'new_run',
+        ...data,
+      }));
+    }
+    
+    return new Response('OK');
   }
-  
-  return run.id;
-}
-
-export async function getRunComparison(
-  env: Env,
-  repoId: string,
-  branch: string,
-  currentRunId: string
-): Promise<{
-  new_warnings: Warning[];
-  fixed_warnings: Warning[];
-  trend: 'improving' | 'worsening' | 'stable';
-}> {
-  const supabase = createClient(
-    env.SUPABASE_URL,
-    env.SUPABASE_SERVICE_KEY
-  );
-  
-  // Get previous run on same branch
-  const { data: previousRun } = await supabase
-    .from('warning_runs')
-    .select('id, total_warnings')
-    .eq('repo_id', repoId)
-    .eq('branch', branch)
-    .neq('id', currentRunId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-  
-  if (!previousRun) {
-    return {
-      new_warnings: [],
-      fixed_warnings: [],
-      trend: 'stable'
-    };
-  }
-  
-  // Compare warnings
-  // Implementation details...
-  
-  return comparison;
 }
 ```
 
-### 8. OpenAI Integration (src/services/openai.ts)
+### 6. AI Summary Processing (src/services/openai.ts)
 ```typescript
 import OpenAI from 'openai';
-import { Env, WebhookPayload } from '../types';
+import { Env } from '../types';
 
 export async function generateSummary(
   env: Env,
-  payload: WebhookPayload
+  data: {
+    repo_id: string;
+    run_id: string;
+    warnings: Array<any>;
+  }
 ): Promise<string> {
   const openai = new OpenAI({
     apiKey: env.OPENAI_API_KEY,
   });
   
-  // Group warnings by type
-  const warningsByType = payload.warnings.reduce((acc, warning) => {
+  // Group warnings by type and severity
+  const warningsByType = data.warnings.reduce((acc, warning) => {
     if (!acc[warning.type]) acc[warning.type] = [];
     acc[warning.type].push(warning);
     return acc;
-  }, {} as Record<string, typeof payload.warnings>);
+  }, {} as Record<string, typeof data.warnings>);
+  
+  const criticalCount = data.warnings.filter(w => w.severity === 'critical').length;
+  const highCount = data.warnings.filter(w => w.severity === 'high').length;
   
   const prompt = `
 Analyze these Swift concurrency warnings and provide a concise summary for developers:
 
-Repository: ${payload.repository.full_name}
-Branch: ${payload.branch}
-Total Warnings: ${payload.warnings.length}
+Total Warnings: ${data.warnings.length}
+Critical: ${criticalCount}
+High: ${highCount}
 
 Warning Breakdown:
 ${Object.entries(warningsByType).map(([type, warnings]) => 
@@ -459,7 +453,7 @@ ${Object.entries(warningsByType).map(([type, warnings]) =>
 ).join('\n')}
 
 Top 3 Most Critical Issues:
-${payload.warnings
+${data.warnings
   .filter(w => w.severity === 'critical' || w.severity === 'high')
   .slice(0, 3)
   .map(w => `- ${w.file_path}:${w.line_number} - ${w.message}`)
@@ -479,168 +473,267 @@ Keep the response under 200 words and developer-focused.
     messages: [
       {
         role: 'system',
-        content: 'You are a Swift concurrency expert helping developers fix threading issues.'
+        content: 'You are a Swift concurrency expert helping developers fix threading issues. Be concise and actionable.',
       },
       {
         role: 'user',
-        content: prompt
-      }
+        content: prompt,
+      },
     ],
     temperature: 0.3,
-    max_tokens: 400
+    max_tokens: 400,
   });
   
   return completion.choices[0].message.content || 'Summary generation failed';
 }
 ```
 
-### 9. Notification Services
-
-#### Slack (src/services/slack.ts)
+### 7. Trend Aggregation Handler (src/handlers/trends.ts)
 ```typescript
-import { Env } from '../types';
-
-export async function sendSlackNotification(
+export async function handleTrend(
+  request: Request,
   env: Env,
-  data: NotificationData
-): Promise<void> {
-  const color = data.warnings.length === 0 ? 'good' : 
-                data.warnings.some(w => w.severity === 'critical') ? 'danger' : 'warning';
+  ctx: ExecutionContext
+): Promise<Response> {
+  const url = new URL(request.url);
+  const repoId = url.pathname.split('/')[3];
+  const days = parseInt(url.searchParams.get('days') || '30');
   
-  const payload = {
-    attachments: [{
-      color,
-      title: `SwiftConcur CI Results - ${data.repository.name}`,
-      title_link: `https://github.com/${data.repository.full_name}/runs/${data.run_id}`,
-      fields: [
-        {
-          title: 'Branch',
-          value: data.branch,
-          short: true
-        },
-        {
-          title: 'Total Warnings',
-          value: data.warnings.length.toString(),
-          short: true
-        },
-        {
-          title: 'Summary',
-          value: data.summary,
-          short: false
-        }
-      ],
-      footer: 'SwiftConcur CI',
-      ts: Math.floor(Date.now() / 1000)
-    }]
-  };
+  if (![7, 30, 90].includes(days)) {
+    return new Response('Invalid days parameter', { status: 400 });
+  }
   
-  await fetch(env.SLACK_WEBHOOK_URL, {
-    method: 'POST',
+  const supabase = createClient(env);
+  
+  // Use materialized view for performance
+  const { data, error } = await supabase
+    .from('repo_warning_daily')
+    .select('*')
+    .eq('repo_id', repoId)
+    .gte('date', new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString())
+    .order('date', { ascending: true });
+  
+  if (error) {
+    return new Response('Database error', { status: 500 });
+  }
+  
+  // Calculate trend metrics
+  const trend = calculateTrend(data);
+  
+  return new Response(JSON.stringify({
+    repo_id: repoId,
+    period_days: days,
+    data_points: data,
+    summary: {
+      total_runs: trend.totalRuns,
+      total_warnings: trend.totalWarnings,
+      avg_warnings_per_run: trend.avgWarnings,
+      trend_direction: trend.direction, // 'improving', 'worsening', 'stable'
+      change_percentage: trend.changePercentage,
+    },
+  }), {
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
   });
 }
 ```
 
-### 10. Rate Limiting (src/middleware/rateLimit.ts)
+### 8. Authentication Middleware (src/middleware/auth.ts)
 ```typescript
-import { Env } from '../types';
+export async function authMiddleware(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext
+): Promise<Response | void> {
+  const authHeader = request.headers.get('Authorization');
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+  
+  const token = authHeader.substring(7);
+  
+  // Check token in KV store
+  const repoId = await env.API_TOKENS.get(token);
+  
+  if (!repoId) {
+    return new Response('Invalid token', { status: 401 });
+  }
+  
+  // Add repo_id to request for downstream handlers
+  request.headers.set('X-Repo-Id', repoId);
+}
+```
 
+### 9. Rate Limiting (src/middleware/rateLimit.ts)
+```typescript
 export async function rateLimitMiddleware(
   request: Request,
   env: Env,
   ctx: ExecutionContext
 ): Promise<Response | void> {
-  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const key = `rate_limit:${ip}`;
+  const repoId = request.headers.get('X-Repo-Id') || 'anonymous';
+  const key = `rate_limit:${repoId}`;
   
   // Get current count
   const current = await env.RATE_LIMIT.get(key);
   const count = current ? parseInt(current) : 0;
   
-  // Check limit (100 requests per hour)
-  if (count >= 100) {
+  // Check limit based on plan
+  const limit = await getPlanLimit(env, repoId);
+  
+  if (count >= limit) {
     return new Response('Rate limit exceeded', { 
       status: 429,
       headers: {
-        'X-RateLimit-Limit': '100',
+        'X-RateLimit-Limit': limit.toString(),
         'X-RateLimit-Remaining': '0',
-        'X-RateLimit-Reset': new Date(Date.now() + 3600000).toISOString()
-      }
+        'X-RateLimit-Reset': new Date(Date.now() + 3600000).toISOString(),
+        'Retry-After': '3600',
+      },
     });
   }
   
   // Increment counter
   ctx.waitUntil(
     env.RATE_LIMIT.put(key, (count + 1).toString(), {
-      expirationTtl: 3600 // 1 hour
+      expirationTtl: 3600, // 1 hour
     })
   );
 }
+
+async function getPlanLimit(env: Env, repoId: string): Promise<number> {
+  const supabase = createClient(env);
+  const { data } = await supabase
+    .from('repos')
+    .select('tier')
+    .eq('id', repoId)
+    .single();
+  
+  const limits = {
+    free: 100,
+    pro: 1000,
+    enterprise: 10000,
+  };
+  
+  return limits[data?.tier || 'free'];
+}
 ```
 
-### 11. Testing (tests/worker.test.ts)
-```typescript
-import { describe, it, expect, beforeAll } from 'vitest';
-import { unstable_dev } from 'wrangler';
+### 10. Notification Services
 
-describe('Worker', () => {
-  let worker: Awaited<ReturnType<typeof unstable_dev>>;
+#### Slack Integration (src/services/notifications/slack.ts)
+```typescript
+export async function sendSlackNotification(
+  env: Env,
+  data: {
+    repo_name: string;
+    run_id: string;
+    warnings_count: number;
+    critical_count: number;
+    summary: string;
+    webhook_url: string;
+  }
+): Promise<void> {
+  const color = data.critical_count > 0 ? 'danger' : 
+                data.warnings_count > 0 ? 'warning' : 'good';
   
-  beforeAll(async () => {
-    worker = await unstable_dev('src/index.ts', {
-      experimental: { disableExperimentalWarning: true },
-    });
+  const payload = {
+    attachments: [{
+      color,
+      title: `SwiftConcur CI Results - ${data.repo_name}`,
+      title_link: `https://swiftconcur.dev/repo/${data.run_id}`,
+      fields: [
+        {
+          title: 'Total Warnings',
+          value: data.warnings_count.toString(),
+          short: true,
+        },
+        {
+          title: 'Critical Issues',
+          value: data.critical_count.toString(),
+          short: true,
+        },
+      ],
+      text: data.summary,
+      footer: 'SwiftConcur CI',
+      ts: Math.floor(Date.now() / 1000),
+    }],
+  };
+  
+  const response = await fetch(data.webhook_url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
   
-  it('should return 200 for health check', async () => {
-    const response = await worker.fetch('/health');
-    expect(response.status).toBe(200);
-    const text = await response.text();
-    expect(text).toBe('OK');
-  });
+  if (!response.ok) {
+    throw new Error(`Slack notification failed: ${response.status}`);
+  }
+}
+```
+
+## Pay-wall Implementation
+
+### Free Tier Limitations
+```typescript
+async function enforceFreeTierLimits(env: Env, repoId: string, runId: string) {
+  const supabase = createClient(env);
   
-  it('should require authentication for webhook', async () => {
-    const response = await worker.fetch('/api/webhook', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
-    expect(response.status).toBe(401);
-  });
+  // Check if repo is on free tier
+  const { data: repo } = await supabase
+    .from('repos')
+    .select('tier')
+    .eq('id', repoId)
+    .single();
   
-  it('should validate webhook payload', async () => {
-    // Test with valid signature but invalid payload
-    const response = await worker.fetch('/api/webhook', {
-      method: 'POST',
-      headers: {
-        'X-Hub-Signature-256': 'sha256=valid_signature',
-      },
-      body: JSON.stringify({ invalid: 'payload' }),
-    });
-    expect(response.status).toBe(400);
-  });
-});
+  if (repo?.tier === 'free') {
+    // Limit: Only store last 30 runs
+    const { data: runs } = await supabase
+      .from('runs')
+      .select('id')
+      .eq('repo_id', repoId)
+      .order('created_at', { ascending: false })
+      .range(30, 1000); // Get runs beyond the 30th
+    
+    if (runs && runs.length > 0) {
+      // Delete old runs
+      await supabase
+        .from('runs')
+        .delete()
+        .in('id', runs.map(r => r.id));
+    }
+    
+    // No AI summaries for free tier
+    return { allowAISummary: false };
+  }
+  
+  return { allowAISummary: true };
+}
 ```
 
 ## Deployment
 
-### 1. Set Secrets
+### 1. Create KV Namespaces
+```bash
+wrangler kv:namespace create "RATE_LIMIT"
+wrangler kv:namespace create "API_TOKENS"
+```
+
+### 2. Create R2 Bucket
+```bash
+wrangler r2 bucket create swiftconcur-xcresults
+```
+
+### 3. Set Secrets
 ```bash
 wrangler secret put SUPABASE_URL
 wrangler secret put SUPABASE_SERVICE_KEY
 wrangler secret put OPENAI_API_KEY
 wrangler secret put SLACK_WEBHOOK_URL
 wrangler secret put TEAMS_WEBHOOK_URL
-wrangler secret put WEBHOOK_SECRET
 ```
 
-### 2. Create KV Namespace
-```bash
-wrangler kv:namespace create "RATE_LIMIT"
-# Add the ID to wrangler.toml
-```
-
-### 3. Deploy
+### 4. Deploy
 ```bash
 # Development
 wrangler dev
@@ -649,41 +742,68 @@ wrangler dev
 wrangler deploy
 ```
 
-## Integration with GitHub Action
+## Testing
 
-Update the GitHub Action to send results to the API:
+```typescript
+// tests/worker.test.ts
+import { describe, it, expect } from 'vitest';
+import { unstable_dev } from 'wrangler';
 
-```bash
-# In entrypoint.sh
-if [ -n "$SWIFTCONCUR_API_URL" ]; then
-  curl -X POST "$SWIFTCONCUR_API_URL/api/webhook" \
-    -H "Content-Type: application/json" \
-    -H "X-Hub-Signature-256: $(generate_signature)" \
-    -d @"$WEBHOOK_PAYLOAD"
-fi
+describe('SwiftConcur API', () => {
+  let worker: Awaited<ReturnType<typeof unstable_dev>>;
+  
+  beforeAll(async () => {
+    worker = await unstable_dev('src/index.ts', {
+      experimental: { disableExperimentalWarning: true },
+    });
+  });
+  
+  it('should handle warning ingestion', async () => {
+    const formData = new FormData();
+    formData.append('warnings.json', new Blob([JSON.stringify({
+      repo_id: 'test-repo-id',
+      run_id: 'test-run-id',
+      warnings: [],
+      metadata: {
+        commit_sha: 'abc123',
+        branch: 'main',
+        scheme: 'MyApp',
+        configuration: 'Debug',
+        swift_version: '5.9',
+        timestamp: new Date().toISOString(),
+      },
+    })], { type: 'application/json' }));
+    
+    const response = await worker.fetch('/v1/warnings', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer test-token',
+      },
+      body: formData,
+    });
+    
+    expect(response.status).toBe(202);
+    const body = await response.json();
+    expect(body).toHaveProperty('status', 'queued');
+  });
+});
 ```
+
+## Performance Optimizations
+
+1. **Stream uploads to R2**: Handle large xcresult files without memory issues
+2. **Durable Objects**: Shard by repo_id for horizontal scaling
+3. **Materialized views**: Pre-aggregate trend data
+4. **Queue processing**: Async AI summaries to avoid 30s Worker limit
+5. **KV caching**: Cache frequently accessed data like plan limits
 
 ## Security Considerations
 
-1. **Webhook Verification**: Always verify GitHub webhook signatures
-2. **Rate Limiting**: Implement per-IP rate limiting
-3. **Input Validation**: Use Zod schemas for all inputs
-4. **Secrets Management**: Use Cloudflare secrets, never hardcode
-5. **CORS**: Configure appropriate CORS headers
-
-## Performance Optimization
-
-1. **Use Cloudflare Cache**: Cache AI summaries
-2. **Batch Database Operations**: Group Supabase inserts
-3. **Async Processing**: Use `waitUntil` for non-critical tasks
-4. **Edge Locations**: Deploy to multiple regions
-
-## Monitoring
-
-1. **Cloudflare Analytics**: Built-in request metrics
-2. **Custom Metrics**: Log to external service
-3. **Error Tracking**: Integrate Sentry
-4. **Uptime Monitoring**: Use external monitoring service
+1. **Bearer token auth**: Each repo gets unique token
+2. **Rate limiting**: Per-repo limits based on plan
+3. **Input validation**: Strict Zod schemas
+4. **File size limits**: Prevent DoS via large uploads
+5. **CORS**: Restrict to known origins
 
 ## Next Steps
 
