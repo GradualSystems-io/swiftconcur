@@ -5,7 +5,7 @@ import { createMockEnv } from '../setup';
 describe('API Integration Tests', () => {
   let worker: UnstableDevWorker;
   
-  beforeAll(async () => {
+  beforeEach(async () => {
     // Note: This would require wrangler dev to be set up properly
     // For now, we'll mock the worker behavior
     worker = {
@@ -14,7 +14,7 @@ describe('API Integration Tests', () => {
     } as any;
   });
   
-  afterAll(async () => {
+  afterEach(async () => {
     if (worker) {
       await worker.stop();
     }

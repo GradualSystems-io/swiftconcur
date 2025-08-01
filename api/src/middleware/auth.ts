@@ -7,7 +7,7 @@ import { CryptoUtils } from '../utils/crypto';
 export async function authMiddleware(
   request: RequestWithRepo,
   env: Env,
-  ctx: ExecutionContext
+  ctx: any
 ): Promise<Response | void> {
   // Skip auth for health check and CORS preflight
   const url = new URL(request.url);

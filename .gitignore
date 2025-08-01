@@ -12,3 +12,5 @@ instructions/.DS_Store
 instructions/.DS_Store
 .DS_Store
 .DS_Store
+/api/node_modules
+/node_modules

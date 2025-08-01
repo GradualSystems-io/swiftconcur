@@ -1,22 +1,57 @@
 import { vi } from 'vitest';
+import type { Env, RequestWithRepo } from '../src/types';
 
 // Mock Cloudflare runtime globals
-Object.assign(global, {
-  crypto: {
-    getRandomValues: (arr: Uint8Array) => {
-      for (let i = 0; i < arr.length; i++) {
-        arr[i] = Math.floor(Math.random() * 256);
-      }
-      return arr;
-    },
-    subtle: {
-      digest: vi.fn().mockImplementation((algorithm: string, data: ArrayBuffer) => {
-        // Simple mock implementation
-        const mockHash = new Uint8Array(32).fill(0);
-        return Promise.resolve(mockHash.buffer);
-      }),
-    },
+const mockCrypto = {
+  getRandomValues: (arr: Uint8Array) => {
+    for (let i = 0; i < arr.length; i++) {
+      arr[i] = Math.floor(Math.random() * 256);
+    }
+    return arr;
   },
+  subtle: {
+    digest: vi.fn().mockImplementation((_algorithm: string, data: ArrayBuffer) => {
+      // Generate different hashes for different inputs
+      const view = new Uint8Array(data);
+      const mockHash = new Uint8Array(32);
+      
+      // Simple hash based on input content
+      let seed = 0;
+      for (let i = 0; i < view.length; i++) {
+        seed += view[i];
+      }
+      
+      for (let i = 0; i < 32; i++) {
+        mockHash[i] = (seed + i) % 256;
+      }
+      
+      return Promise.resolve(mockHash.buffer);
+    }),
+  },
+};
+
+// Only assign crypto if it doesn't exist or is configurable
+if (!global.crypto) {
+  Object.defineProperty(global, 'crypto', {
+    value: mockCrypto,
+    writable: true,
+    configurable: true,
+  });
+} else {
+  // If crypto exists but we need to override it for tests
+  try {
+    Object.assign(global.crypto, mockCrypto);
+  } catch {
+    // If assignment fails, try to redefine
+    Object.defineProperty(global, 'crypto', {
+      value: mockCrypto,
+      writable: true,
+      configurable: true,
+    });
+  }
+}
+
+Object.assign(global, {
   
   // Mock WebSocket
   WebSocketPair: vi.fn().mockImplementation(() => ({
@@ -54,7 +89,7 @@ global.console = {
 };
 
 // Helper function to create mock environment
-export function createMockEnv(): any {
+export function createMockEnv(): Env {
   return {
     RATE_LIMIT: {
       get: vi.fn(),
@@ -93,15 +128,10 @@ export function createMockEnv(): any {
 export function createMockRequest(
   url: string,
   options: RequestInit & { repoId?: string } = {}
-): any {
+): RequestWithRepo {
   const { repoId, ...requestOptions } = options;
   
-  const request = {
-    url,
-    method: options.method || 'GET',
-    headers: new Map(Object.entries(options.headers || {})),
-    ...requestOptions,
-  };
+  const request = new Request(url, requestOptions) as RequestWithRepo;
   
   if (repoId) {
     request.repoId = repoId;
@@ -111,7 +141,7 @@ export function createMockRequest(
 }
 
 // Helper function to create mock execution context
-export function createMockContext(): ExecutionContext {
+export function createMockContext(): any {
   return {
     waitUntil: vi.fn(),
     passThroughOnException: vi.fn(),

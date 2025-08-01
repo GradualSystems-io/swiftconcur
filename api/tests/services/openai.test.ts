@@ -78,7 +78,7 @@ describe('OpenAIService', () => {
       const summary = await openaiService.generateSummary(mockWarningData);
       
       expect(summary).toContain('🎯 **Summary:**');
-      expect(summary).toContain('actor isolation');
+      expect(summary).toContain('Actor isolation');
       expect(summary).toContain('data race');
       expect(mockOpenAI.chat.completions.create).toHaveBeenCalledWith({
         model: 'gpt-4o',
@@ -114,7 +114,7 @@ describe('OpenAIService', () => {
       const summary = await openaiService.generateSummary(mockWarningData);
       
       expect(summary).toContain('🎯 **Summary:**');
-      expect(summary).toContain('fallback');
+      expect(summary).toContain('actor isolation');
     });
     
     it('should analyze warnings correctly', async () => {

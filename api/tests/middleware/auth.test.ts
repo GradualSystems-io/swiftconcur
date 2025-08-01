@@ -4,7 +4,7 @@ import { createMockEnv, createMockRequest, createMockContext } from '../setup';
 
 describe('authMiddleware', () => {
   let mockEnv: any;
-  let mockContext: ExecutionContext;
+  let mockContext: any;
   
   beforeEach(() => {
     mockEnv = createMockEnv();
