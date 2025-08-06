@@ -14,3 +14,7 @@ instructions/.DS_Store
 .DS_Store
 /api/node_modules
 /node_modules
+.env.local
+/dashboard
+instructions/.DS_Store
+.envrc
