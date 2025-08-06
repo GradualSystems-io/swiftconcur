@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS warnings(
   run_id uuid REFERENCES runs(id) ON DELETE CASCADE NOT NULL,
   file_path text NOT NULL CHECK (length(file_path) > 0),
   line int NOT NULL CHECK (line > 0),
-  column int CHECK (column > 0),
+  column_number int CHECK (column_number > 0),
   type text NOT NULL CHECK (type IN ('actor_isolation', 'sendable', 'data_race', 'performance')),
   severity text NOT NULL CHECK (severity IN ('critical', 'high', 'medium', 'low')),
   message text NOT NULL CHECK (length(message) > 0),
@@ -53,7 +53,7 @@ CREATE MATERIALIZED VIEW repo_warning_daily AS
 SELECT 
   repo_id,
   DATE(created_at) as date,
-  COUNT(DISTINCT run_id) as run_count,
+  COUNT(DISTINCT id) as run_count,
   SUM(warnings_count) as total_warnings,
   AVG(warnings_count::numeric) as avg_warnings
 FROM runs

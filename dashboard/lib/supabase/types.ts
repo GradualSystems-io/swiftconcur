@@ -12,8 +12,8 @@ export type Database = {
           is_private: boolean;
           webhook_secret: string | null;
         };
-        Insert: Omit<Row, 'id' | 'created_at'>;
-        Update: Partial<Insert>;
+        Insert: Omit<Database['public']['Tables']['repos']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['repos']['Insert']>;
       };
       runs: {
         Row: {
@@ -31,8 +31,8 @@ export type Database = {
           status: 'pending' | 'processing' | 'completed' | 'failed';
           r2_object_key: string | null;
         };
-        Insert: Omit<Row, 'id' | 'created_at'>;
-        Update: Partial<Insert>;
+        Insert: Omit<Database['public']['Tables']['repos']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['repos']['Insert']>;
       };
       warnings: {
         Row: {
@@ -89,8 +89,8 @@ export type Database = {
           created_at: string;
           expires_at: string | null;
         };
-        Insert: Omit<Row, 'id' | 'created_at'>;
-        Update: Partial<Insert>;
+        Insert: Omit<Database['public']['Tables']['repos']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['repos']['Insert']>;
       };
     };
     Views: {

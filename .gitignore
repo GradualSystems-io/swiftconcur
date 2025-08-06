@@ -4,17 +4,36 @@ target/
 *.dylib
 *.so
 *.dll
+
 # IDEs
 .idea/
 .vscode/
+
+# Test projects
 /TestSwiftConcur
-instructions/.DS_Store
-instructions/.DS_Store
-.DS_Store
-.DS_Store
+
+# Node modules
 /api/node_modules
 /node_modules
+/dashboard/node_modules
+
+# Environment files (sensitive)
 .env.local
-/dashboard
-instructions/.DS_Store
+.env.*.local
 .envrc
+
+# System files
+.DS_Store
+*/.DS_Store
+instructions/.DS_Store
+
+# Build outputs
+/dashboard/.next/
+/dashboard/out/
+/api/dist/
+
+# Logs
+*.log
+/dashboard/npm-debug.log*
+/dashboard/yarn-debug.log*
+/dashboard/yarn-error.log*
