@@ -9,27 +9,36 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
 export default async function DashboardPage() {
-  const { user } = await verifyUser();
+  const { user, error } = await verifyUser();
+  
+  // This should not happen due to layout.tsx, but let's be safe
+  if (error || !user) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <h2 className="text-2xl font-semibold">Authentication Required</h2>
+          <p className="text-muted-foreground mt-2">Please sign in to continue</p>
+        </div>
+      </div>
+    );
+  }
+
   const supabase = createClient();
   
   // Fetch user's repositories with statistics
   const { data: repos } = await supabase
-    .from('user_repo_access')
+    .from('user_repos')
     .select(`
       repo_id,
-      repo_name,
-      repo_tier,
-      total_warnings,
-      critical_warnings,
-      last_run_at
+      repos (
+        id,
+        name,
+        tier
+      )
     `)
-    .eq('user_id', user!.id);
+    .eq('user_id', user.id);
   
-  // Fetch global statistics for the user
-  const { data: globalStats } = await supabase
-    .rpc('get_user_global_stats', { user_id: user!.id });
-  
-  // Transform repository data for RepoCard
+  // Transform repository data for RepoCard  
   const repoData = repos?.map(repo => ({
     id: repo.repo_id,
     name: repo.repo_name,
@@ -115,18 +124,31 @@ export default async function DashboardPage() {
       
       {/* Charts Section */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <TrendChart 
-          title="Global Warning Trends (30 days)"
-          days={30}
-          variant="area"
-        />
+        <Card>
+          <CardHeader>
+            <CardTitle>Global Warning Trends</CardTitle>
+            <CardDescription>Warning patterns over the last 30 days</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TrendChart 
+              days={30}
+              variant="area"
+            />
+          </CardContent>
+        </Card>
         
         {warningTypeData.length > 0 ? (
-          <WarningTypeChart 
-            data={warningTypeData}
-            title="Warning Types Distribution"
-            variant="pie"
-          />
+          <Card>
+            <CardHeader>
+              <CardTitle>Warning Types Distribution</CardTitle>
+              <CardDescription>Breakdown of warning categories</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <WarningTypeChart 
+                data={warningTypeData}
+              />
+            </CardContent>
+          </Card>
         ) : (
           <Card>
             <CardHeader>

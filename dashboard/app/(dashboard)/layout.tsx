@@ -19,15 +19,15 @@ export default async function DashboardLayout({
   
   // Get user's repositories with security checks
   const { data: repos } = await supabase
-    .from('user_repo_access')
-    .select('repo_id, repo_name')
+    .from('user_repos')
+    .select('repo_id, repos(id, name)')
     .eq('user_id', user.id)
-    .order('repo_name');
+    .order('repos(name)');
   
   // Transform for sidebar compatibility
   const repoList = repos?.map(r => ({
     id: r.repo_id,
-    name: r.repo_name,
+    name: r.repos?.name || 'Unknown',
   })) || [];
   
   return (

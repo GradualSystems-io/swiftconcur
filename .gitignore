@@ -37,3 +37,4 @@ instructions/.DS_Store
 /dashboard/npm-debug.log*
 /dashboard/yarn-debug.log*
 /dashboard/yarn-error.log*
+dashboard/.env.local
