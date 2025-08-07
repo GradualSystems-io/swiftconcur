@@ -2,7 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { Database, UserRole } from './types';
 
-// Security: Rate limiting for server requests
+// Security: Rate limiting for server requests (note: not reliable on serverless)
 const requestCounts = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT = 100; // requests per minute
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -10,23 +10,31 @@ const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 function checkRateLimit(identifier: string): boolean {
   const now = Date.now();
   const current = requestCounts.get(identifier);
-  
+
   if (!current || now > current.resetTime) {
     requestCounts.set(identifier, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
     return true;
   }
-  
-  if (current.count >= RATE_LIMIT) {
-    return false;
-  }
-  
+
+  if (current.count >= RATE_LIMIT) return false;
   current.count++;
   return true;
 }
 
+const isProd = process.env.NODE_ENV === 'production';
+const COOKIE_DOMAIN = process.env.SUPABASE_COOKIE_DOMAIN || undefined; // e.g. ".gradualsystems.io"
+
+const BASE_COOKIE_OPTS: CookieOptions = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: 'lax', // IMPORTANT: lax for auth redirects
+  path: '/',
+  ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
+};
+
 export function createClient() {
   const cookieStore = cookies();
-  
+
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -37,32 +45,23 @@ export function createClient() {
         },
         set(name: string, value: string, options: CookieOptions) {
           try {
-            // Security: Ensure secure cookie options
-            const secureOptions: CookieOptions = {
-              ...options,
-              httpOnly: true,
-              secure: process.env.NODE_ENV === 'production',
-              sameSite: 'strict',
-              path: '/',
-            };
-            
-            cookieStore.set({ name, value, ...secureOptions });
+            const finalOpts: CookieOptions = { ...BASE_COOKIE_OPTS, ...options };
+            cookieStore.set({ name, value, ...finalOpts });
           } catch (error) {
-            // Handle the case where cookies can't be set (e.g., in Server Components)
+            // Happens in some server-component contexts; harmless
             console.warn('Failed to set cookie:', error);
           }
         },
         remove(name: string, options: CookieOptions) {
           try {
-            const secureOptions: CookieOptions = {
+            const finalOpts: CookieOptions = {
+              ...BASE_COOKIE_OPTS,
               ...options,
-              httpOnly: true,
-              secure: process.env.NODE_ENV === 'production',
-              sameSite: 'strict',
-              path: '/',
+              maxAge: 0,
+              expires: new Date(0),
             };
-            
-            cookieStore.set({ name, value: '', ...secureOptions });
+            // next/headers has .delete, but this works across runtimes:
+            cookieStore.set({ name, value: '', ...finalOpts });
           } catch (error) {
             console.warn('Failed to remove cookie:', error);
           }
@@ -75,47 +74,34 @@ export function createClient() {
 // Security: Enhanced user verification with role checking
 export async function verifyUser(requiredRole?: UserRole) {
   const supabase = createClient();
-  
+
   try {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    
-    console.log('verifyUser check:', { 
-      hasUser: !!user, 
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
+    console.log('verifyUser check:', {
+      hasUser: !!user,
       userEmail: user?.email,
       emailConfirmed: user?.email_confirmed_at,
-      error: error?.message 
+      error: error?.message,
     });
-    
-    if (error || !user) {
-      return { user: null, error: 'Unauthorized' };
-    }
-    
-    // Security: Rate limiting per user
-    if (!checkRateLimit(user.id)) {
-      return { user: null, error: 'Rate limit exceeded' };
-    }
-    
-    // If role checking is required, verify user has access
+
+    if (error || !user) return { user: null, error: 'Unauthorized' };
+
+    if (!checkRateLimit(user.id)) return { user: null, error: 'Rate limit exceeded' };
+
     if (requiredRole) {
-      // This would typically check against a user_roles table or user metadata
-      const userRole = user.user_metadata?.role as UserRole;
-      
-      if (!userRole) {
-        return { user: null, error: 'No role assigned' };
-      }
-      
-      // Role hierarchy check
-      const roleHierarchy: Record<UserRole, number> = {
-        read: 1,
-        admin: 2,
-        owner: 3,
-      };
-      
+      const userRole = user.user_metadata?.role as UserRole | undefined;
+      if (!userRole) return { user: null, error: 'No role assigned' };
+
+      const roleHierarchy: Record<UserRole, number> = { read: 1, admin: 2, owner: 3 };
       if (roleHierarchy[userRole] < roleHierarchy[requiredRole]) {
         return { user: null, error: 'Insufficient permissions' };
       }
     }
-    
+
     return { user, error: null };
   } catch (error) {
     console.error('User verification error:', error);
@@ -126,13 +112,10 @@ export async function verifyUser(requiredRole?: UserRole) {
 // Security: Repository access control
 export async function verifyRepoAccess(repoId: string, requiredRole: UserRole = 'read') {
   const { user, error } = await verifyUser();
-  
-  if (error || !user) {
-    return { hasAccess: false, error };
-  }
-  
+  if (error || !user) return { hasAccess: false, error };
+
   const supabase = createClient();
-  
+
   try {
     const { data, error: accessError } = await supabase
       .from('user_repos')
@@ -140,20 +123,12 @@ export async function verifyRepoAccess(repoId: string, requiredRole: UserRole = 
       .eq('user_id', user.id)
       .eq('repo_id', repoId)
       .single();
-    
-    if (accessError || !data) {
-      return { hasAccess: false, error: 'Repository not found or access denied' };
-    }
-    
-    // Check role hierarchy
-    const roleHierarchy: Record<UserRole, number> = {
-      read: 1,
-      admin: 2,
-      owner: 3,
-    };
-    
+
+    if (accessError || !data) return { hasAccess: false, error: 'Repository not found or access denied' };
+
+    const roleHierarchy: Record<UserRole, number> = { read: 1, admin: 2, owner: 3 };
     const hasAccess = roleHierarchy[data.role] >= roleHierarchy[requiredRole];
-    
+
     return {
       hasAccess,
       error: hasAccess ? null : 'Insufficient repository permissions',
@@ -165,31 +140,21 @@ export async function verifyRepoAccess(repoId: string, requiredRole: UserRole = 
   }
 }
 
-// Security: Input sanitization utility
+// Security: Input sanitization utility (basic)
 export function sanitizeInput(input: any): any {
   if (typeof input === 'string') {
-    // Remove potentially dangerous characters
-    return input
-      .replace(/[<>\"']/g, '') // Remove HTML/XSS characters
-      .replace(/[;()]/g, '') // Remove SQL injection characters
-      .trim()
-      .slice(0, 1000); // Limit length
+    return input.replace(/[<>\"']/g, '').replace(/[;()]/g, '').trim().slice(0, 1000);
   }
-  
-  if (Array.isArray(input)) {
-    return input.map(sanitizeInput).slice(0, 100); // Limit array length
-  }
-  
+  if (Array.isArray(input)) return input.map(sanitizeInput).slice(0, 100);
   if (input && typeof input === 'object') {
     const sanitized: any = {};
-    Object.keys(input).slice(0, 50).forEach(key => { // Limit object keys
+    Object.keys(input).slice(0, 50).forEach((key) => {
       if (typeof key === 'string' && key.length < 100) {
-        sanitized[sanitizeInput(key)] = sanitizeInput(input[key]);
+        sanitized[sanitizeInput(key)] = sanitizeInput((input as any)[key]);
       }
     });
     return sanitized;
   }
-  
   return input;
 }
 
@@ -201,10 +166,9 @@ export async function auditLog(
   additionalData?: any
 ) {
   const { user } = await verifyUser();
-  
   if (!user) return;
-  
-  // In a real application, you would log this to a secure audit table
+
+  // If you need IP/UA reliably, accept a NextRequest and read from req.headers instead.
   console.log('AUDIT LOG:', {
     timestamp: new Date().toISOString(),
     userId: user.id,
@@ -213,7 +177,5 @@ export async function auditLog(
     resourceType,
     resourceId,
     additionalData: sanitizeInput(additionalData),
-    userAgent: process.env.HTTP_USER_AGENT,
-    ip: process.env.HTTP_X_FORWARDED_FOR || process.env.HTTP_X_REAL_IP,
   });
 }
