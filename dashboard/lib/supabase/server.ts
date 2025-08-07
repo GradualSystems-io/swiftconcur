@@ -79,6 +79,13 @@ export async function verifyUser(requiredRole?: UserRole) {
   try {
     const { data: { user }, error } = await supabase.auth.getUser();
     
+    console.log('verifyUser check:', { 
+      hasUser: !!user, 
+      userEmail: user?.email,
+      emailConfirmed: user?.email_confirmed_at,
+      error: error?.message 
+    });
+    
     if (error || !user) {
       return { user: null, error: 'Unauthorized' };
     }

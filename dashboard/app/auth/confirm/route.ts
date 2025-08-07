@@ -25,13 +25,19 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      console.log('Email confirmation successful:', data?.user?.email);
+      console.log('Email confirmation successful:', data?.user?.email, 'Session:', !!data?.session);
       
-      // For signup confirmations, redirect to login with success message
+      // For signup confirmations, check if we have a session
       if (type === 'signup') {
-        return NextResponse.redirect(
-          new URL('/SwiftConcur/auth/login?message=Email confirmed! Please sign in with your password.', request.url)
-        );
+        if (data?.session) {
+          // User is now logged in, redirect to dashboard
+          return NextResponse.redirect(new URL('/SwiftConcur', request.url));
+        } else {
+          // No session, redirect to login with success message
+          return NextResponse.redirect(
+            new URL('/SwiftConcur/auth/login?message=Email confirmed! Please sign in with your password.', request.url)
+          );
+        }
       }
     } catch (error) {
       console.error('Auth confirmation exception:', error);
