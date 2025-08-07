@@ -29,7 +29,8 @@ export async function GET(request: NextRequest) {
       }
 
       // Session established successfully
-      if (data?.user) {
+      if (data?.user && data?.session) {
+        // User is fully authenticated, go to dashboard
         return NextResponse.redirect(new URL('/SwiftConcur', requestUrl.origin));
       }
     } catch (error) {

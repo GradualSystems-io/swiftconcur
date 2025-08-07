@@ -16,15 +16,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
-    // Check for error in URL params
+    // Check for error or message in URL params
     const urlParams = new URLSearchParams(window.location.search);
     const urlError = urlParams.get('error');
+    const urlMessage = urlParams.get('message');
+    
     if (urlError) {
       setError(decodeURIComponent(urlError));
+    }
+    if (urlMessage) {
+      setMessage(decodeURIComponent(urlMessage));
     }
   }, []);
 
@@ -87,6 +93,12 @@ export default function LoginPage() {
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {message && (
+            <Alert>
+              <AlertDescription>{message}</AlertDescription>
             </Alert>
           )}
 
