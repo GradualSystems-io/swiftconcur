@@ -44,7 +44,7 @@ export default function SignUpPage() {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/SwiftConcur/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/SwiftConcur/auth/confirm`,
         },
       });
 

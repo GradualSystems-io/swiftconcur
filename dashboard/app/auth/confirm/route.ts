@@ -7,22 +7,40 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type') as 'signup' | 'recovery' | 'email_change' | null;
   const next = searchParams.get('next') ?? '/';
 
+  console.log('Auth confirm request:', { token_hash: !!token_hash, type, next });
+
   if (token_hash && type) {
     const supabase = createClient();
 
-    const { error } = await supabase.auth.verifyOtp({
-      type,
-      token_hash,
-    });
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        type,
+        token_hash,
+      });
 
-    if (error) {
-      console.error('Auth confirmation error:', error);
+      if (error) {
+        console.error('Auth confirmation error:', error);
+        return NextResponse.redirect(
+          new URL(`/SwiftConcur/auth/login?error=${encodeURIComponent(error.message)}`, request.url)
+        );
+      }
+
+      console.log('Email confirmation successful:', data?.user?.email);
+      
+      // For signup confirmations, redirect to login with success message
+      if (type === 'signup') {
+        return NextResponse.redirect(
+          new URL('/SwiftConcur/auth/login?message=Email confirmed! Please sign in with your password.', request.url)
+        );
+      }
+    } catch (error) {
+      console.error('Auth confirmation exception:', error);
       return NextResponse.redirect(
-        new URL(`/SwiftConcur/auth/login?error=${encodeURIComponent(error.message)}`, request.url)
+        new URL('/SwiftConcur/auth/login?error=confirmation_failed', request.url)
       );
     }
   }
 
-  // Redirect to the dashboard or specified next URL
-  return NextResponse.redirect(new URL(`/SwiftConcur${next === '/' ? '' : next}`, request.url));
+  // If no token or type, redirect to login
+  return NextResponse.redirect(new URL('/SwiftConcur/auth/login', request.url));
 }
