@@ -18,11 +18,11 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('Auth confirmation error:', error);
       return NextResponse.redirect(
-        new URL(`/auth/login?error=${encodeURIComponent(error.message)}`, request.url)
+        new URL(`/SwiftConcur/auth/login?error=${encodeURIComponent(error.message)}`, request.url)
       );
     }
   }
 
   // Redirect to the dashboard or specified next URL
-  return NextResponse.redirect(new URL(next, request.url));
+  return NextResponse.redirect(new URL(`/SwiftConcur${next === '/' ? '' : next}`, request.url));
 }

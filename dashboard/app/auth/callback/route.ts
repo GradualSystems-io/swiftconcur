@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   if (error_code) {
     console.error('Auth callback error:', error_code, error_description);
     return NextResponse.redirect(
-      new URL(`/auth/login?error=${encodeURIComponent(error_description || error_code)}`, requestUrl.origin)
+      new URL(`/SwiftConcur/auth/login?error=${encodeURIComponent(error_description || error_code)}`, requestUrl.origin)
     );
   }
 
@@ -24,22 +24,22 @@ export async function GET(request: NextRequest) {
       if (error) {
         console.error('Auth callback error:', error);
         return NextResponse.redirect(
-          new URL(`/auth/login?error=${encodeURIComponent(error.message)}`, requestUrl.origin)
+          new URL(`/SwiftConcur/auth/login?error=${encodeURIComponent(error.message)}`, requestUrl.origin)
         );
       }
 
       // Session established successfully
       if (data?.user) {
-        return NextResponse.redirect(new URL('/', requestUrl.origin));
+        return NextResponse.redirect(new URL('/SwiftConcur', requestUrl.origin));
       }
     } catch (error) {
       console.error('Auth callback exception:', error);
       return NextResponse.redirect(
-        new URL('/auth/login?error=callback_error', requestUrl.origin)
+        new URL('/SwiftConcur/auth/login?error=callback_error', requestUrl.origin)
       );
     }
   }
 
   // If no code or error, redirect to login
-  return NextResponse.redirect(new URL('/auth/login', requestUrl.origin));
+  return NextResponse.redirect(new URL('/SwiftConcur/auth/login', requestUrl.origin));
 }
