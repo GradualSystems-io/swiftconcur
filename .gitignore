@@ -38,3 +38,4 @@ instructions/.DS_Store
 /dashboard/yarn-debug.log*
 /dashboard/yarn-error.log*
 dashboard/.env.local
+instructions/.DS_Store

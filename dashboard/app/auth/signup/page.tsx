@@ -44,7 +44,7 @@ export default function SignUpPage() {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/SwiftConcur/auth/confirm`,
+          emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/SwiftConcur/auth/callback`,
         },
       });
 
@@ -68,7 +68,7 @@ export default function SignUpPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: `${window.location.origin}/SwiftConcur/auth/callback`,
+          redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/SwiftConcur/auth/callback`,
         },
       });
 

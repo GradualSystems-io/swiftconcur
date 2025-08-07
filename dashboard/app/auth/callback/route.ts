@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
-  const code = requestUrl.searchParams.get('code');
+  const code = request.nextUrl.searchParams.get('code') ?? request.nextUrl.searchParams.get('token');  // PKCE / magic-link
   const error_code = requestUrl.searchParams.get('error');
   const error_description = requestUrl.searchParams.get('error_description');
 
