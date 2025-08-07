@@ -1,52 +1,61 @@
-import { createClient } from '@/lib/supabase/server';
-import { NextRequest, NextResponse } from 'next/server';
+// app/SwiftConcur/auth/confirm/route.ts
+import { createClient } from '@/lib/supabase/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const token_hash = searchParams.get('token_hash');
-  const type = searchParams.get('type') as 'signup' | 'recovery' | 'email_change' | null;
-  const next = searchParams.get('next') ?? '/';
+  const url = new URL(request.url)
+  const searchParams = url.searchParams
 
-  console.log('Auth confirm request:', { token_hash: !!token_hash, type, next });
+  const code = searchParams.get('code')
+  const token_hash = searchParams.get('token_hash')
+  const type = searchParams.get('type') as 'signup' | 'recovery' | 'email_change' | null
 
-  if (token_hash && type) {
-    const supabase = createClient();
+  // Optional post-login redirect, kept strict to your app subpath to avoid open redirects
+  const requestedNext = searchParams.get('next')
+  const safeNext =
+    requestedNext && requestedNext.startsWith('/SwiftConcur')
+      ? requestedNext
+      : '/SwiftConcur/dashboard'
 
-    try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        type,
-        token_hash,
-      });
+  const redirectTo = (path: string) => NextResponse.redirect(new URL(path, url.origin))
+  const loginWithError = (msg: string) =>
+    redirectTo(`/SwiftConcur/auth/login?error=${encodeURIComponent(msg)}`)
 
-      if (error) {
-        console.error('Auth confirmation error:', error);
-        return NextResponse.redirect(
-          new URL(`/SwiftConcur/auth/login?error=${encodeURIComponent(error.message)}`, request.url)
-        );
-      }
+  const supabase = createClient()
 
-      console.log('Email confirmation successful:', data?.user?.email, 'Session:', !!data?.session);
-      
-      // For signup confirmations, check if we have a session
-      if (type === 'signup') {
-        if (data?.session) {
-          // User is now logged in, redirect to dashboard
-          return NextResponse.redirect(new URL('/SwiftConcur', request.url));
-        } else {
-          // No session, redirect to login with success message
-          return NextResponse.redirect(
-            new URL('/SwiftConcur/auth/login?message=Email confirmed! Please sign in with your password.', request.url)
-          );
-        }
-      }
-    } catch (error) {
-      console.error('Auth confirmation exception:', error);
-      return NextResponse.redirect(
-        new URL('/SwiftConcur/auth/login?error=confirmation_failed', request.url)
-      );
+  try {
+    // 1) Preferred: PKCE / code exchange flow
+    if (code) {
+      const { error } = await supabase.auth.exchangeCodeForSession(code)
+      if (error) return loginWithError(error.message)
+
+      // Touch the user to ensure cookies are written in SSR contexts
+      await supabase.auth.getUser()
+      return redirectTo(safeNext)
     }
-  }
 
-  // If no token or type, redirect to login
-  return NextResponse.redirect(new URL('/SwiftConcur/auth/login', request.url));
+    // 2) Back-compat: token_hash + type (verifyOtp)
+    if (token_hash && type) {
+      const { data, error } = await supabase.auth.verifyOtp({ type, token_hash })
+      if (error) return loginWithError(error.message)
+
+      if (type === 'signup') {
+        // If session exists, they're logged in; otherwise prompt to log in
+        if (data?.session) return redirectTo(safeNext)
+        return redirectTo(
+          '/SwiftConcur/auth/login?message=' +
+            encodeURIComponent('Email confirmed! Please sign in to continue.')
+        )
+      }
+
+      // For recovery/email_change just send them to app home or next
+      return redirectTo(safeNext)
+    }
+
+    // No recognizable params → send to login
+    return redirectTo('/SwiftConcur/auth/login')
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'confirmation_failed'
+    return loginWithError(message)
+  }
 }
