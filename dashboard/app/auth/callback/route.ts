@@ -28,10 +28,19 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      // Log the response for debugging
+      console.log('Auth callback data:', JSON.stringify(data, null, 2));
+
       // Session established successfully
       if (data?.user && data?.session) {
+        console.log('User authenticated successfully:', data.user.email, 'Email confirmed:', data.user.email_confirmed_at);
         // User is fully authenticated, go to dashboard
         return NextResponse.redirect(new URL('/SwiftConcur', requestUrl.origin));
+      } else if (data?.user && !data?.session) {
+        console.log('User exists but no session:', data.user.email, 'Email confirmed:', data.user.email_confirmed_at);
+        return NextResponse.redirect(
+          new URL('/SwiftConcur/auth/login?message=Email confirmed! Please sign in with your password.', requestUrl.origin)
+        );
       }
     } catch (error) {
       console.error('Auth callback exception:', error);
