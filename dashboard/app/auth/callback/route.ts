@@ -13,22 +13,22 @@ export async function GET(req: NextRequest) {
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (error) throw error;
-      return NextResponse.redirect(new URL('/SwiftConcur', req.url));
+      return NextResponse.redirect(new URL('/dashboard', req.url));
     }
 
     if (token_hash && type) {
       const { error } = await supabase.auth.verifyOtp({ type, token_hash });
       if (error) throw error;
-      return NextResponse.redirect(new URL('/SwiftConcur', req.url));
+      return NextResponse.redirect(new URL('/dashboard', req.url));
     }
 
     // Nothing we can process
     return NextResponse.redirect(
-      new URL('/SwiftConcur/auth/login?error=missing_code', req.url)
+      new URL('/auth/login?error=missing_code', req.url)
     );
   } catch (err: any) {
     return NextResponse.redirect(
-      new URL(`/SwiftConcur/auth/login?error=${encodeURIComponent(err?.message ?? 'auth_failed')}`, req.url)
+      new URL(`/auth/login?error=${encodeURIComponent(err?.message ?? 'auth_failed')}`, req.url)
     );
   }
 }

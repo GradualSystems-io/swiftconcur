@@ -41,16 +41,16 @@ export default function SignUpPage() {
     }
 
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/SwiftConcur/auth/confirm`,
-        },
+      const response = await fetch('/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       });
 
-      if (error) {
-        setError(error.message);
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        setError(data.error || 'Signup failed');
       } else {
         setSuccess('Check your email for a confirmation link!');
       }
@@ -69,7 +69,7 @@ export default function SignUpPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/SwiftConcur/auth/callback`,
+          redirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 
