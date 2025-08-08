@@ -20,6 +20,7 @@ export default function SignUpPage() {
   const [success, setSuccess] = useState('');
   const router = useRouter();
   const supabase = createClient();
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? location.origin;
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +45,7 @@ export default function SignUpPage() {
         email,
         password,
         options: {
-          emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/SwiftConcur/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/SwiftConcur/auth/confirm`,
         },
       });
 

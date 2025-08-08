@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [message, setMessage] = useState('');
   const router = useRouter();
   const supabase = createClient();
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? location.origin;
 
   useEffect(() => {
     // Check for error or message in URL params
@@ -69,7 +70,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/SwiftConcur/auth/callback`,
+          redirectTo: `${siteUrl}/SwiftConcur/auth/callback`,
         },
       });
 
