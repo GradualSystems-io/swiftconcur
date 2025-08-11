@@ -33,37 +33,38 @@ export function createClient() {
   
   const { url, key } = validateEnvironment();
   
+  // IMPORTANT: Don't specify storage - let @supabase/ssr handle cookies automatically
   client = createBrowserClient<Database>(url, key, {
     auth: {
-      // Security: Set secure cookie options
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      // REMOVE the storage line - let it use cookies by default
+      flowType: 'pkce', // Add this for better security
     },
     global: {
-      // Security headers for all requests
       headers: {
         'X-Client-Info': 'swiftconcur-dashboard',
       },
     },
     db: {
-      // Security: Set schema to public explicitly
       schema: 'public',
+    },
+    cookies: {
+      // Let @supabase/ssr handle cookie operations automatically
+      // It will use document.cookie in the browser
     },
   });
   
-  // Security: Add request interceptor for additional validation
+  // Your security interceptor is fine
   const originalRequest = client.rest.request;
   client.rest.request = async (options) => {
-    // Add security headers
     options.headers = {
       ...options.headers,
       'X-Request-Origin': 'dashboard',
       'X-Client-Version': '1.0.0',
     };
     
-    // Security: Validate query parameters for potential injection
     if (options.query) {
       Object.entries(options.query).forEach(([key, value]) => {
         if (typeof value === 'string' && value.includes(';')) {
@@ -78,7 +79,6 @@ export function createClient() {
   return client;
 }
 
-// Security: Function to clear client (useful for logout)
 export function clearClient() {
   client = null;
 }
