@@ -52,3 +52,21 @@ export function createClient() {
     }
   );
 }
+
+export async function verifyUser() {
+  const supabase = createClient();
+  
+  try {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error || !user) return { user: null, error: 'Unauthorized' };
+
+    return { user, error: null };
+  } catch (error) {
+    console.error('User verification error:', error);
+    return { user: null, error: 'Verification failed' };
+  }
+}
