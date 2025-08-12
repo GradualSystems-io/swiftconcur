@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
   const code = url.searchParams.get('code');
   const token_hash = url.searchParams.get('token_hash');
   const type = url.searchParams.get('type') as 'signup' | 'recovery' | 'email_change' | null;
-  const next = url.searchParams.get('next') ?? '/dashboard';
+  const next = url.searchParams.get('next') ?? '/SwiftConcur/dashboard';
   const error = url.searchParams.get('error');
   const errorDescription = url.searchParams.get('error_description');
 
