@@ -20,7 +20,7 @@ export default function SignUpPage() {
   const [success, setSuccess] = useState('');
   const router = useRouter();
   const supabase = createClient();
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? location.origin;
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
