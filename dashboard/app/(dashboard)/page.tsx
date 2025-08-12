@@ -182,7 +182,7 @@ export default async function DashboardPage() {
           </div>
           
           <Button asChild>
-            <Link href="/settings">
+            <Link href="/repositories">
               <Shield className="h-4 w-4 mr-2" />
               Add Repository
             </Link>
@@ -200,13 +200,13 @@ export default async function DashboardPage() {
               </p>
               <div className="flex gap-4 justify-center">
                 <Button asChild>
-                  <Link href="/settings">
+                  <Link href="/repositories">
                     <Shield className="h-4 w-4 mr-2" />
                     Connect Repository
                   </Link>
                 </Button>
                 <Button variant="outline" asChild>
-                  <Link href="/docs" target="_blank">
+                  <Link href="/docs">
                     <Activity className="h-4 w-4 mr-2" />
                     View Documentation
                   </Link>
