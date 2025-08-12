@@ -1,13 +1,15 @@
 import { createClient } from '@/lib/supabase/server';
 import { PLANS } from '@/lib/billing/plans';
 import { getUsageStats, getUserSubscription } from '@/lib/billing/usage';
+import { getUserGitHubSubscription } from '@/lib/billing/github-marketplace';
 import { PlanCard } from '@/components/billing/PlanCard';
 import { UsageChart } from '@/components/billing/UsageChart';
 import { SubscriptionManager } from '@/components/billing/SubscriptionManager';
+import { BillingProviderSelector } from '@/components/billing/BillingProviderSelector';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ExternalLink, CreditCard, AlertTriangle, CheckCircle } from 'lucide-react';
+import { ExternalLink, CreditCard, AlertTriangle, CheckCircle, Github } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
 export default async function BillingPage({
@@ -24,15 +26,20 @@ export default async function BillingPage({
     redirect('/auth/login');
   }
   
-  // Get user's subscription
-  const subscription = await getUserSubscription(user.id);
-  const currentPlan = subscription?.plan_id || 'free';
+  // Get user's subscriptions (both Stripe and GitHub)
+  const stripeSubscription = await getUserSubscription(user.id);
+  const githubSubscription = await getUserGitHubSubscription(user.id);
+  
+  // Determine active subscription (prioritize Stripe over GitHub)
+  const activeSubscription = stripeSubscription || githubSubscription;
+  const currentPlan = activeSubscription?.plan_id || 'free';
+  const billingProvider = stripeSubscription ? 'stripe' : githubSubscription ? 'github_marketplace' : null;
   
   // Get usage statistics if user has a subscription
   let usage = null;
-  if (subscription) {
+  if (activeSubscription) {
     try {
-      usage = await getUsageStats(subscription.id);
+      usage = await getUsageStats(activeSubscription.id);
     } catch (error) {
       console.error('Error getting usage stats:', error);
     }
@@ -93,28 +100,57 @@ export default async function BillingPage({
                 Current Plan: {PLANS[currentPlan].displayName}
               </h2>
               {currentPlan !== 'free' && (
-                <Badge variant={subscription?.status === 'active' ? 'default' : 'destructive'}>
-                  {subscription?.status || 'inactive'}
+                <Badge variant={activeSubscription?.status === 'active' ? 'default' : 'destructive'}>
+                  {activeSubscription?.status || 'inactive'}
+                </Badge>
+              )}
+              {billingProvider && (
+                <Badge variant="outline" className="flex items-center gap-1">
+                  {billingProvider === 'stripe' ? (
+                    <CreditCard className="w-3 h-3" />
+                  ) : (
+                    <Github className="w-3 h-3" />
+                  )}
+                  {billingProvider === 'stripe' ? 'Stripe' : 'GitHub Marketplace'}
                 </Badge>
               )}
             </div>
             <p className="text-muted-foreground mt-1">
-              {subscription?.status === 'active' 
-                ? `Next billing date: ${new Date(subscription.current_period_end).toLocaleDateString()}`
+              {activeSubscription?.status === 'active' 
+                ? `Next billing date: ${new Date(activeSubscription.current_period_end).toLocaleDateString()}`
                 : currentPlan === 'free' 
                   ? 'No active subscription'
                   : 'Subscription inactive'
               }
             </p>
-            {subscription?.cancel_at_period_end && (
+            {activeSubscription?.cancel_at_period_end && (
               <p className="text-yellow-600 mt-1">
-                ⚠️ Subscription will be canceled on {new Date(subscription.current_period_end).toLocaleDateString()}
+                ⚠️ Subscription will be canceled on {new Date(activeSubscription.current_period_end).toLocaleDateString()}
+              </p>
+            )}
+            {githubSubscription?.on_free_trial && (
+              <p className="text-blue-600 mt-1">
+                🎁 Free trial ends on {new Date(githubSubscription.free_trial_ends_on!).toLocaleDateString()}
               </p>
             )}
           </div>
           
-          {subscription && (
-            <SubscriptionManager subscription={subscription} />
+          {activeSubscription && billingProvider === 'stripe' && (
+            <SubscriptionManager subscription={activeSubscription} />
+          )}
+          
+          {activeSubscription && billingProvider === 'github_marketplace' && (
+            <Button variant="outline" asChild>
+              <a 
+                href={`https://github.com/marketplace/${process.env.NEXT_PUBLIC_GITHUB_APP_NAME || 'swiftconcur-ci'}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Github className="w-4 h-4 mr-2" />
+                Manage on GitHub
+                <ExternalLink className="w-4 h-4 ml-2" />
+              </a>
+            </Button>
           )}
         </div>
       </div>
@@ -138,6 +174,14 @@ export default async function BillingPage({
         </Alert>
       )}
       
+      {/* Billing Provider Selection */}
+      {currentPlan === 'free' && (
+        <div>
+          <h2 className="text-2xl font-semibold mb-4">Choose Your Payment Method</h2>
+          <BillingProviderSelector />
+        </div>
+      )}
+      
       {/* Available Plans */}
       <div>
         <h2 className="text-2xl font-semibold mb-4">Available Plans</h2>
@@ -148,7 +192,8 @@ export default async function BillingPage({
               plan={plan}
               currentPlan={plan.id === currentPlan}
               popular={plan.popular}
-              disabled={subscription?.status === 'active' && plan.id === currentPlan}
+              disabled={activeSubscription?.status === 'active' && plan.id === currentPlan}
+              billingProvider={billingProvider}
             />
           ))}
         </div>

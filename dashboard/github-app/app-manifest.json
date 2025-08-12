@@ -1,0 +1,29 @@
+{
+  "name": "SwiftConcur CI",
+  "description": "Track Swift concurrency warnings in your CI/CD pipeline",
+  "url": "https://swiftconcur.dev",
+  "hook_attributes": {
+    "url": "https://swiftconcur.dev/api/github/marketplace/webhook"
+  },
+  "redirect_url": "https://swiftconcur.dev/auth/callback",
+  "callback_urls": [
+    "https://swiftconcur.dev/auth/callback"
+  ],
+  "public": true,
+  "default_permissions": {
+    "checks": "write",
+    "contents": "read",
+    "issues": "write",
+    "metadata": "read",
+    "pull_requests": "write",
+    "actions": "read"
+  },
+  "default_events": [
+    "check_run",
+    "check_suite",
+    "pull_request",
+    "push",
+    "marketplace_purchase"
+  ],
+  "has_multiple_plans": true
+}

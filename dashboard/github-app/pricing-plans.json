@@ -1,0 +1,66 @@
+{
+  "plans": [
+    {
+      "id": 1001,
+      "name": "free",
+      "display_name": "Free",
+      "description": "Perfect for open source projects and getting started with Swift concurrency tracking",
+      "monthly_price_in_cents": 0,
+      "yearly_price_in_cents": 0,
+      "price_model": "flat_rate",
+      "has_free_trial": false,
+      "unit_name": null,
+      "bullets": [
+        "500 warnings per month",
+        "1 private repository",
+        "7-day warning history",
+        "Basic dashboard",
+        "GitHub PR comments",
+        "Community support"
+      ]
+    },
+    {
+      "id": 1002,
+      "name": "pro",
+      "display_name": "Pro",
+      "description": "Best for growing teams and production applications",
+      "monthly_price_in_cents": 1200,
+      "yearly_price_in_cents": 12000,
+      "price_model": "per_unit",
+      "has_free_trial": true,
+      "unit_name": "repository",
+      "bullets": [
+        "20,000 warnings per month",
+        "Up to 10 private repositories",
+        "12-month warning history",
+        "AI-powered summaries",
+        "Slack & Teams integration",
+        "Trend analysis charts",
+        "Custom webhooks",
+        "Email support"
+      ]
+    },
+    {
+      "id": 1003,
+      "name": "enterprise",
+      "display_name": "Enterprise",
+      "description": "Advanced features for large organizations",
+      "monthly_price_in_cents": 9900,
+      "yearly_price_in_cents": 99000,
+      "price_model": "per_unit",
+      "has_free_trial": true,
+      "unit_name": "organization",
+      "bullets": [
+        "Unlimited warnings",
+        "Unlimited repositories",
+        "Unlimited warning history",
+        "SSO integration",
+        "Audit logs",
+        "Priority support",
+        "SLA guarantees",
+        "Custom contracts",
+        "Dedicated support"
+      ]
+    }
+  ]
+}

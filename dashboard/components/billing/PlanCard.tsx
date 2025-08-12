@@ -12,9 +12,10 @@ interface PlanCardProps {
   currentPlan: boolean;
   popular?: boolean;
   disabled?: boolean;
+  billingProvider?: string | null;
 }
 
-export function PlanCard({ plan, currentPlan, popular, disabled }: PlanCardProps) {
+export function PlanCard({ plan, currentPlan, popular, disabled, billingProvider }: PlanCardProps) {
   const [loading, setLoading] = useState(false);
   
   const features = [
@@ -81,7 +82,18 @@ export function PlanCard({ plan, currentPlan, popular, disabled }: PlanCardProps
         return;
       }
       
-      // Create checkout session
+      // Determine which billing provider to use
+      const urlParams = new URLSearchParams(window.location.search);
+      const preferredProvider = urlParams.get('provider') || 'stripe';
+      
+      if (preferredProvider === 'github_marketplace' || billingProvider === 'github_marketplace') {
+        // Redirect to GitHub Marketplace
+        const githubAppName = process.env.NEXT_PUBLIC_GITHUB_APP_NAME || 'swiftconcur-ci';
+        window.location.href = `https://github.com/marketplace/${githubAppName}`;
+        return;
+      }
+      
+      // Use Stripe checkout
       const response = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
