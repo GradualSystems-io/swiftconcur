@@ -4,7 +4,7 @@ import type { NextRequest } from 'next/server';
 export function middleware(req: NextRequest) {
   const url = req.nextUrl;
   if (url.pathname === '/SwiftConcur' && url.searchParams.has('code')) {
-    url.pathname = '/SwiftConcur/auth/callback';
+    url.pathname = '/auth/callback';
     return NextResponse.redirect(url);
   }
   return NextResponse.next();
