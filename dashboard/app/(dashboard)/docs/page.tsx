@@ -1,5 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
 import { BookOpen, Github, ExternalLink, Copy, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 import Link from 'next/link';
 
@@ -109,11 +110,8 @@ jobs:
         # Optional: Enable AI-powered summaries (Pro/Enterprise only)
         ai-summaries: true`}
             </pre>
-            <Button
-              size="sm"
-              variant="outline"
-              className="absolute top-2 right-2"
-              onClick={() => navigator.clipboard.writeText(`name: SwiftConcur CI
+            <CopyButton
+              text={`name: SwiftConcur CI
 
 on:
   push:
@@ -135,10 +133,9 @@ jobs:
         workspace-path: 'YourApp.xcworkspace'
         configuration: 'Debug'
         threshold: 0
-        ai-summaries: true`)}
-            >
-              <Copy className="h-3 w-3" />
-            </Button>
+        ai-summaries: true`}
+              className="absolute top-2 right-2"
+            />
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
