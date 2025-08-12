@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     email,
     password,
     options: {
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/confirm`,
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/SwiftConcur/auth/confirm`,
     },
   });
 
