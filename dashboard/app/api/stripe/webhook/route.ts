@@ -5,10 +5,13 @@ import { verifyStripeWebhook } from '@/lib/stripe';
 import { getPlanByStripePrice } from '@/lib/billing/plans';
 import { initializeUsageLimits } from '@/lib/billing/usage';
 
-const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
-
-if (!WEBHOOK_SECRET) {
-  throw new Error('STRIPE_WEBHOOK_SECRET is required');
+// Get webhook secret with runtime validation
+function getWebhookSecret(): string {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) {
+    throw new Error('STRIPE_WEBHOOK_SECRET is required');
+  }
+  return secret;
 }
 
 export async function POST(request: NextRequest) {
@@ -20,7 +23,7 @@ export async function POST(request: NextRequest) {
     const signature = request.headers.get('stripe-signature');
     
     // Security: Verify webhook signature
-    const event = verifyStripeWebhook(body, signature, WEBHOOK_SECRET);
+    const event = verifyStripeWebhook(body, signature, getWebhookSecret());
     
     // Security: Log all events for audit trail
     await supabase.from('billing_events').insert({

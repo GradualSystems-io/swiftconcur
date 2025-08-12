@@ -1,19 +1,31 @@
 import Stripe from 'stripe';
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('STRIPE_SECRET_KEY is required');
-}
-
 // Initialize Stripe with security configurations
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
-  typescript: true,
-  // Security: Use latest API version and enable telemetry for monitoring
-  telemetry: true,
-  // Timeout configuration for security
-  timeout: 10000, // 10 seconds
-  maxNetworkRetries: 3,
-});
+// Only initialize if we have the secret key (avoid build-time errors)
+export const stripe = process.env.STRIPE_SECRET_KEY 
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: '2023-10-16',
+      typescript: true,
+      // Security: Use latest API version and enable telemetry for monitoring
+      telemetry: true,
+      // Timeout configuration for security
+      timeout: 10000, // 10 seconds
+      maxNetworkRetries: 3,
+    })
+  : null;
+
+// Helper function to get Stripe instance with runtime validation
+export function getStripe(): Stripe {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY is required');
+  }
+  
+  if (!stripe) {
+    throw new Error('Stripe not initialized');
+  }
+  
+  return stripe;
+}
 
 // Security: Webhook signature verification
 export function verifyStripeWebhook(
@@ -26,7 +38,7 @@ export function verifyStripeWebhook(
   }
 
   try {
-    return stripe.webhooks.constructEvent(body, signature, secret);
+    return getStripe().webhooks.constructEvent(body, signature, secret);
   } catch (error) {
     throw new Error(`Webhook signature verification failed: ${error}`);
   }
@@ -38,7 +50,7 @@ export async function validateCustomerOwnership(
   userEmail: string
 ): Promise<boolean> {
   try {
-    const customer = await stripe.customers.retrieve(customerId);
+    const customer = await getStripe().customers.retrieve(customerId);
     
     if (customer.deleted) {
       return false;
@@ -57,7 +69,7 @@ export async function createStripeCustomer(
   userId: string,
   metadata?: Record<string, string>
 ): Promise<Stripe.Customer> {
-  return stripe.customers.create({
+  return getStripe().customers.create({
     email,
     metadata: {
       userId,
@@ -82,5 +94,5 @@ export async function updateStripeCustomer(
   if (updates.name) allowedUpdates.name = updates.name;
   if (updates.metadata) allowedUpdates.metadata = updates.metadata;
   
-  return stripe.customers.update(customerId, allowedUpdates);
+  return getStripe().customers.update(customerId, allowedUpdates);
 }

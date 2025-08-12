@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { stripe } from '@/lib/stripe';
+import { getStripe } from '@/lib/stripe';
 
 export async function POST(request: NextRequest) {
   const supabase = createClient();
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
 async function handleCancelSubscription(subscriptionId: string) {
   try {
     // Cancel at period end to avoid immediate loss of access
-    const subscription = await stripe.subscriptions.update(subscriptionId, {
+    const subscription = await getStripe().subscriptions.update(subscriptionId, {
       cancel_at_period_end: true,
     });
     
@@ -78,7 +78,7 @@ async function handleCancelSubscription(subscriptionId: string) {
 async function handleReactivateSubscription(subscriptionId: string) {
   try {
     // Remove the cancellation
-    const subscription = await stripe.subscriptions.update(subscriptionId, {
+    const subscription = await getStripe().subscriptions.update(subscriptionId, {
       cancel_at_period_end: false,
     });
     
@@ -98,7 +98,7 @@ async function handleReactivateSubscription(subscriptionId: string) {
 
 async function createCustomerPortalSession(customerId: string) {
   try {
-    const session = await stripe.billingPortal.sessions.create({
+    const session = await getStripe().billingPortal.sessions.create({
       customer: customerId,
       return_url: `${process.env.NEXT_PUBLIC_APP_URL}/billing`,
     });
