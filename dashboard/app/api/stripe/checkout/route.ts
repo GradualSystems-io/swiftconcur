@@ -18,8 +18,14 @@ export async function POST(request: NextRequest) {
     
     // Security: Validate plan ID
     const plan = PLANS[planId];
-    if (!plan || !plan.stripePriceId) {
+    if (!plan) {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
+    }
+    
+    if (!plan.stripePriceId || plan.stripePriceId.includes('placeholder')) {
+      return NextResponse.json({ 
+        error: 'Billing not configured for this plan. Please contact support.' 
+      }, { status: 400 });
     }
     
     // Get or create Stripe customer

@@ -73,6 +73,12 @@ export function PlanCard({ plan, currentPlan, popular, disabled, billingProvider
   const handleSelectPlan = async () => {
     if (currentPlan || disabled || loading) return;
     
+    // Check if Stripe is properly configured for this plan
+    if (plan.id !== 'free' && (!plan.stripePriceId || plan.stripePriceId.includes('placeholder'))) {
+      alert('Billing is not yet configured for this plan. Please contact support for assistance.');
+      return;
+    }
+    
     setLoading(true);
     
     try {
@@ -93,23 +99,33 @@ export function PlanCard({ plan, currentPlan, popular, disabled, billingProvider
         return;
       }
       
-      // Use Stripe checkout
-      const response = await fetch('/api/stripe/checkout', {
+      // Use Stripe checkout (handle basePath correctly)
+      const basePath = '/SwiftConcur'; // Match next.config.js basePath
+      const response = await fetch(`${basePath}/api/stripe/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           planId: plan.id,
-          successUrl: `${window.location.origin}/billing?success=true`,
-          cancelUrl: `${window.location.origin}/billing?canceled=true`,
+          successUrl: `${window.location.origin}${basePath}/billing?success=true`,
+          cancelUrl: `${window.location.origin}${basePath}/billing?canceled=true`,
         }),
       });
       
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create checkout session');
+        let errorMessage = 'Failed to create checkout session';
+        try {
+          const error = await response.json();
+          errorMessage = error.error || errorMessage;
+        } catch (parseError) {
+          // If response is not JSON, get text content
+          const errorText = await response.text();
+          errorMessage = errorText || `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
       
-      const { url } = await response.json();
+      const data = await response.json();
+      const { url } = data;
       
       if (url) {
         window.location.href = url;
