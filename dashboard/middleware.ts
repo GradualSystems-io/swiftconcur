@@ -218,11 +218,13 @@ export function middleware(request: NextRequest) {
       pathname.startsWith('/settings') || pathname.startsWith('/profile')) {
     
     // This is a basic check - actual authentication happens in the layout
-    const hasSession = request.cookies.has('sb-access-token') || 
-                      request.cookies.has('sso_session');
+    // Check for any Supabase auth cookies (they start with 'sb-')
+    const cookieEntries = Array.from(request.cookies.getAll());
+    const hasSupabaseCookies = cookieEntries.some(cookie => cookie.name.startsWith('sb-'));
+    const hasSession = hasSupabaseCookies || request.cookies.has('sso_session');
     
     if (!hasSession) {
-      return NextResponse.redirect(new URL('/login', request.url));
+      return NextResponse.redirect(new URL('/auth/login', request.url));
     }
   }
   
