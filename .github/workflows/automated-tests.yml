@@ -276,7 +276,7 @@ jobs:
           fi
 
       - name: Run tests with coverage
-        id: coverage-${{ matrix.component }}
+        id: coverage
         run: |
           echo "🧪 Running ${{ matrix.component }} tests with coverage..."
           cd ${{ matrix.component }}
