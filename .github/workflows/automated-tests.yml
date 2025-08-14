@@ -1,0 +1,630 @@
+name: Automated Tests & Coverage
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'parser/**'
+      - 'dashboard/**'
+      - 'api/**'
+      - 'cli/**'
+      - '.github/workflows/automated-tests.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'parser/**'
+      - 'dashboard/**'
+      - 'api/**'
+      - 'cli/**'
+      - '.github/workflows/automated-tests.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  MINIMUM_COVERAGE_RUST: 80
+  MINIMUM_COVERAGE_JS: 80
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-tests:
+    name: Rust Tests & Coverage
+    runs-on: ubuntu-latest
+    outputs:
+      coverage: ${{ steps.coverage.outputs.coverage }}
+      test-results: ${{ steps.test.outputs.results }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-tests-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-tests-
+            ${{ runner.os }}-cargo-
+
+      - name: Install testing tools
+        run: |
+          # Install cargo-nextest for faster test execution
+          cargo install cargo-nextest --locked
+          
+          # Install tarpaulin for coverage
+          cargo install cargo-tarpaulin --locked
+          
+          # Install cargo-llvm-cov as alternative coverage tool
+          cargo install cargo-llvm-cov --locked
+
+      - name: Check code formatting
+        run: |
+          echo "🔍 Checking Rust code formatting..."
+          cd parser
+          cargo fmt --all -- --check
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Code formatting check failed"
+            echo "Run 'cargo fmt' to fix formatting issues"
+            exit 1
+          fi
+          echo "✅ Code formatting check passed"
+
+      - name: Run Clippy lints
+        run: |
+          echo "🔍 Running Clippy lints..."
+          cd parser
+          cargo clippy --all-targets --all-features -- \
+            -D warnings \
+            -D clippy::all \
+            -D clippy::pedantic \
+            -A clippy::module_name_repetitions \
+            -A clippy::missing_errors_doc
+          
+          echo "✅ Clippy lints passed"
+
+      - name: Run unit tests with nextest
+        id: test
+        run: |
+          echo "🧪 Running Rust unit tests..."
+          cd parser
+          
+          # Run tests with JSON output for parsing
+          cargo nextest run --workspace --all-features --no-fail-fast \
+            --message-format json > ../test-results.json
+          
+          # Also run with human-readable output
+          cargo nextest run --workspace --all-features --no-fail-fast
+          
+          # Parse test results
+          TOTAL_TESTS=$(jq -r '.[] | select(.type == "suite") | .event.passed + .event.failed' ../test-results.json | head -1)
+          PASSED_TESTS=$(jq -r '.[] | select(.type == "suite") | .event.passed' ../test-results.json | head -1)
+          FAILED_TESTS=$(jq -r '.[] | select(.type == "suite") | .event.failed' ../test-results.json | head -1)
+          
+          echo "Total tests: $TOTAL_TESTS"
+          echo "Passed: $PASSED_TESTS"
+          echo "Failed: $FAILED_TESTS"
+          
+          echo "results={\"total\":$TOTAL_TESTS,\"passed\":$PASSED_TESTS,\"failed\":$FAILED_TESTS}" >> $GITHUB_OUTPUT
+          
+          if [ "$FAILED_TESTS" -gt 0 ]; then
+            echo "❌ $FAILED_TESTS test(s) failed"
+            exit 1
+          fi
+          
+          echo "✅ All $PASSED_TESTS tests passed"
+
+      - name: Run integration tests
+        run: |
+          echo "🧪 Running Rust integration tests..."
+          cd parser
+          cargo test --test integration_tests --no-fail-fast
+          echo "✅ Integration tests passed"
+
+      - name: Run doctests
+        run: |
+          echo "📚 Running Rust doctests..."
+          cd parser
+          cargo test --doc --no-fail-fast
+          echo "✅ Doctests passed"
+
+      - name: Generate test coverage with tarpaulin
+        id: coverage
+        run: |
+          echo "📊 Generating test coverage report..."
+          cd parser
+          
+          # Run tarpaulin to generate coverage
+          cargo tarpaulin \
+            --workspace \
+            --engine llvm \
+            --exclude-files '../target/*' \
+            --exclude-files 'tests/*' \
+            --exclude-files '*/tests/*' \
+            --out xml \
+            --out html \
+            --out json \
+            --output-dir ../coverage \
+            --timeout 120 \
+            --fail-under $MINIMUM_COVERAGE_RUST
+          
+          # Extract coverage percentage
+          COVERAGE=$(jq -r '.files | map(.summary.lines.percent) | add / length' ../coverage/tarpaulin-report.json)
+          echo "Coverage: ${COVERAGE}%"
+          
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          
+          # Check if coverage meets minimum threshold
+          if (( $(echo "$COVERAGE < $MINIMUM_COVERAGE_RUST" | bc -l) )); then
+            echo "❌ Coverage $COVERAGE% is below minimum threshold $MINIMUM_COVERAGE_RUST%"
+            exit 1
+          fi
+          
+          echo "✅ Coverage $COVERAGE% meets minimum threshold $MINIMUM_COVERAGE_RUST%"
+
+      - name: Generate detailed coverage report
+        run: |
+          echo "📋 Generating detailed coverage report..."
+          cd coverage
+          
+          # Create detailed coverage summary
+          cat > coverage-summary.md << EOF
+          # 📊 Rust Code Coverage Report
+          
+          **Overall Coverage**: ${COVERAGE}%
+          **Minimum Required**: $MINIMUM_COVERAGE_RUST%
+          **Status**: $([ "$COVERAGE" -ge "$MINIMUM_COVERAGE_RUST" ] && echo "✅ PASSED" || echo "❌ FAILED")
+          
+          ## Coverage by File
+          
+          EOF
+          
+          # Add per-file coverage (if tarpaulin JSON is available)
+          if [ -f tarpaulin-report.json ]; then
+            jq -r '.files[] | "| \(.name) | \(.summary.lines.percent)% |"' tarpaulin-report.json | \
+            sed '1i| File | Coverage |' | \
+            sed '2i|------|----------|' >> coverage-summary.md
+          fi
+          
+          echo "" >> coverage-summary.md
+          echo "## Test Results" >> coverage-summary.md
+          echo "" >> coverage-summary.md
+          echo "- **Total Tests**: $(echo '${{ steps.test.outputs.results }}' | jq -r '.total')" >> coverage-summary.md
+          echo "- **Passed**: $(echo '${{ steps.test.outputs.results }}' | jq -r '.passed')" >> coverage-summary.md
+          echo "- **Failed**: $(echo '${{ steps.test.outputs.results }}' | jq -r '.failed')" >> coverage-summary.md
+          echo "" >> coverage-summary.md
+          echo "*Generated on $(date -u)*" >> coverage-summary.md
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-coverage-reports
+          path: |
+            coverage/
+            test-results.json
+          retention-days: 30
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        if: always()
+        with:
+          file: coverage/cobertura.xml
+          flags: rust
+          name: rust-coverage
+          fail_ci_if_error: false
+
+  javascript-tests:
+    name: JavaScript/TypeScript Tests & Coverage
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [dashboard, api]
+    outputs:
+      coverage-dashboard: ${{ steps.coverage-dashboard.outputs.coverage }}
+      coverage-api: ${{ steps.coverage-api.outputs.coverage }}
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd ${{ matrix.component }}
+          npm ci
+
+      - name: Check TypeScript compilation
+        run: |
+          echo "🔍 Checking TypeScript compilation..."
+          cd ${{ matrix.component }}
+          if [ -f tsconfig.json ]; then
+            npx tsc --noEmit
+            echo "✅ TypeScript compilation check passed"
+          else
+            echo "ℹ️ No TypeScript configuration found, skipping"
+          fi
+
+      - name: Run ESLint
+        run: |
+          echo "🔍 Running ESLint..."
+          cd ${{ matrix.component }}
+          if [ -f .eslintrc.js ] || [ -f .eslintrc.json ] || [ -f eslint.config.js ]; then
+            npm run lint || npx eslint . --ext .js,.ts,.tsx
+            echo "✅ ESLint check passed"
+          else
+            echo "ℹ️ No ESLint configuration found, skipping"
+          fi
+
+      - name: Run tests with coverage
+        id: coverage-${{ matrix.component }}
+        run: |
+          echo "🧪 Running ${{ matrix.component }} tests with coverage..."
+          cd ${{ matrix.component }}
+          
+          # Check which test runner is configured
+          if npm run test:coverage --dry-run 2>/dev/null; then
+            npm run test:coverage
+          elif npm run test -- --coverage 2>/dev/null; then
+            npm run test -- --coverage --watchAll=false
+          elif command -v vitest &> /dev/null; then
+            npx vitest run --coverage
+          else
+            # Fallback to basic test command
+            npm test
+            echo "⚠️ No coverage configuration found for ${{ matrix.component }}"
+          fi
+          
+          # Extract coverage percentage if coverage report exists
+          COVERAGE="0"
+          if [ -f coverage/coverage-summary.json ]; then
+            COVERAGE=$(jq -r '.total.lines.pct' coverage/coverage-summary.json)
+          elif [ -f coverage/lcov-report/index.html ]; then
+            # Parse coverage from HTML report if JSON not available
+            COVERAGE=$(grep -o '[0-9]\+\.[0-9]\+%' coverage/lcov-report/index.html | head -1 | sed 's/%//')
+          fi
+          
+          echo "Coverage for ${{ matrix.component }}: ${COVERAGE}%"
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          
+          # Check coverage threshold
+          if (( $(echo "$COVERAGE < $MINIMUM_COVERAGE_JS" | bc -l) )); then
+            echo "❌ Coverage $COVERAGE% is below minimum threshold $MINIMUM_COVERAGE_JS%"
+            exit 1
+          fi
+          
+          echo "✅ Coverage $COVERAGE% meets minimum threshold $MINIMUM_COVERAGE_JS%"
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.component }}-coverage-reports
+          path: ${{ matrix.component }}/coverage/
+          retention-days: 30
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        if: always()
+        with:
+          directory: ${{ matrix.component }}/coverage
+          flags: ${{ matrix.component }}
+          name: ${{ matrix.component }}-coverage
+          fail_ci_if_error: false
+
+  integration-tests:
+    name: Integration & E2E Tests
+    runs-on: ubuntu-latest
+    needs: [rust-tests]
+    if: always() && needs.rust-tests.result == 'success'
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: swiftconcur_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup test environment
+        run: |
+          echo "🔧 Setting up integration test environment..."
+          
+          # Install required tools
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          
+          # Verify database connection
+          PGPASSWORD=postgres psql -h localhost -U postgres -d swiftconcur_test -c "SELECT 1;"
+          
+          echo "✅ Test environment ready"
+
+      - name: Build parser for integration tests
+        run: |
+          echo "🔨 Building parser for integration tests..."
+          cd parser
+          cargo build --release
+          
+          # Make binary available for integration tests
+          cp target/release/swiftconcur-parser ../swiftconcur-cli
+          chmod +x ../swiftconcur-cli
+
+      - name: Run parser integration tests
+        run: |
+          echo "🧪 Running parser integration tests..."
+          
+          # Test with sample xcodebuild output
+          cd parser/tests/fixtures
+          
+          # Test JSON parsing
+          echo "Testing JSON parsing..."
+          ../../../swiftconcur-cli -f xcresult_single_warning.json --format json > /tmp/test_output.json
+          
+          # Verify output contains expected warnings
+          if jq -e '.warnings | length > 0' /tmp/test_output.json; then
+            echo "✅ JSON parsing test passed"
+          else
+            echo "❌ JSON parsing test failed"
+            exit 1
+          fi
+          
+          # Test markdown output
+          echo "Testing markdown output..."
+          ../../../swiftconcur-cli -f xcresult_single_warning.json --format markdown > /tmp/test_output.md
+          
+          if grep -q "Swift Concurrency Warnings" /tmp/test_output.md; then
+            echo "✅ Markdown output test passed"
+          else
+            echo "❌ Markdown output test failed"
+            exit 1
+          fi
+
+      - name: Run dashboard integration tests
+        run: |
+          if [ -d dashboard ] && [ -f dashboard/package.json ]; then
+            echo "🧪 Running dashboard integration tests..."
+            cd dashboard
+            
+            if npm run test:integration --dry-run 2>/dev/null; then
+              npm run test:integration
+            else
+              echo "ℹ️ No integration tests configured for dashboard"
+            fi
+          fi
+
+      - name: Run API integration tests
+        run: |
+          if [ -d api ] && [ -f api/package.json ]; then
+            echo "🧪 Running API integration tests..."
+            cd api
+            
+            if npm run test:integration --dry-run 2>/dev/null; then
+              npm run test:integration
+            else
+              echo "ℹ️ No integration tests configured for API"
+            fi
+          fi
+
+  coverage-report:
+    name: Coverage Report & Quality Gates
+    runs-on: ubuntu-latest
+    needs: [rust-tests, javascript-tests]
+    if: always()
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          path: coverage-reports
+
+      - name: Install jq for JSON processing
+        run: sudo apt-get install -y jq bc
+
+      - name: Generate comprehensive coverage report
+        run: |
+          echo "📊 Generating comprehensive coverage report..."
+          
+          # Extract coverage data
+          RUST_COVERAGE="${{ needs.rust-tests.outputs.coverage }}"
+          DASHBOARD_COVERAGE="${{ needs.javascript-tests.outputs.coverage-dashboard }}"
+          API_COVERAGE="${{ needs.javascript-tests.outputs.coverage-api }}"
+          
+          # Calculate overall coverage (weighted by codebase size estimate)
+          # Rust: 60%, Dashboard: 25%, API: 15%
+          OVERALL_COVERAGE=$(echo "scale=2; ($RUST_COVERAGE * 0.6 + $DASHBOARD_COVERAGE * 0.25 + $API_COVERAGE * 0.15)" | bc)
+          
+          # Create comprehensive report
+          cat > coverage-report.md << EOF
+          # 📊 SwiftConcur Test Coverage Report
+          
+          **Generated**: $(date -u)  
+          **Branch**: ${{ github.ref_name }}  
+          **Commit**: ${{ github.sha }}  
+          
+          ## Overall Coverage: ${OVERALL_COVERAGE}%
+          
+          | Component | Coverage | Status | Minimum Required |
+          |-----------|----------|---------|------------------|
+          | Rust Parser | ${RUST_COVERAGE}% | $([ "${RUST_COVERAGE%.*}" -ge "$MINIMUM_COVERAGE_RUST" ] && echo "✅ PASS" || echo "❌ FAIL") | $MINIMUM_COVERAGE_RUST% |
+          | Dashboard | ${DASHBOARD_COVERAGE}% | $([ "${DASHBOARD_COVERAGE%.*}" -ge "$MINIMUM_COVERAGE_JS" ] && echo "✅ PASS" || echo "❌ FAIL") | $MINIMUM_COVERAGE_JS% |
+          | API | ${API_COVERAGE}% | $([ "${API_COVERAGE%.*}" -ge "$MINIMUM_COVERAGE_JS" ] && echo "✅ PASS" || echo "❌ FAIL") | $MINIMUM_COVERAGE_JS% |
+          
+          ## Test Results Summary
+          
+          $(echo '${{ needs.rust-tests.outputs.test-results }}' | jq -r '"- **Rust Tests**: \(.passed) passed, \(.failed) failed, \(.total) total"')
+          
+          ## Quality Gates
+          
+          EOF
+          
+          # Quality gate checks
+          QUALITY_GATE_PASSED=true
+          
+          if [ "${RUST_COVERAGE%.*}" -lt "$MINIMUM_COVERAGE_RUST" ]; then
+            echo "- ❌ Rust coverage below threshold ($RUST_COVERAGE% < $MINIMUM_COVERAGE_RUST%)" >> coverage-report.md
+            QUALITY_GATE_PASSED=false
+          else
+            echo "- ✅ Rust coverage meets threshold ($RUST_COVERAGE% >= $MINIMUM_COVERAGE_RUST%)" >> coverage-report.md
+          fi
+          
+          if [ "${DASHBOARD_COVERAGE%.*}" -lt "$MINIMUM_COVERAGE_JS" ]; then
+            echo "- ❌ Dashboard coverage below threshold ($DASHBOARD_COVERAGE% < $MINIMUM_COVERAGE_JS%)" >> coverage-report.md
+            QUALITY_GATE_PASSED=false
+          else
+            echo "- ✅ Dashboard coverage meets threshold ($DASHBOARD_COVERAGE% >= $MINIMUM_COVERAGE_JS%)" >> coverage-report.md
+          fi
+          
+          if [ "${API_COVERAGE%.*}" -lt "$MINIMUM_COVERAGE_JS" ]; then
+            echo "- ❌ API coverage below threshold ($API_COVERAGE% < $MINIMUM_COVERAGE_JS%)" >> coverage-report.md
+            QUALITY_GATE_PASSED=false
+          else
+            echo "- ✅ API coverage meets threshold ($API_COVERAGE% >= $MINIMUM_COVERAGE_JS%)" >> coverage-report.md
+          fi
+          
+          echo "" >> coverage-report.md
+          
+          if [ "$QUALITY_GATE_PASSED" = true ]; then
+            echo "## ✅ Overall Status: PASSED" >> coverage-report.md
+            echo "All quality gates passed. Code is ready for merge." >> coverage-report.md
+          else
+            echo "## ❌ Overall Status: FAILED" >> coverage-report.md
+            echo "One or more quality gates failed. Please improve test coverage before merging." >> coverage-report.md
+          fi
+          
+          echo "" >> coverage-report.md
+          echo "---" >> coverage-report.md
+          echo "*This report was automatically generated by the SwiftConcur CI pipeline*" >> coverage-report.md
+          
+          # Output for other steps
+          echo "QUALITY_GATE_PASSED=$QUALITY_GATE_PASSED" >> $GITHUB_ENV
+          echo "OVERALL_COVERAGE=$OVERALL_COVERAGE" >> $GITHUB_ENV
+
+      - name: Create coverage badges
+        run: |
+          echo "🏷️ Creating coverage badges..."
+          mkdir -p badges
+          
+          # Create badge URLs (these would typically use shields.io or similar service)
+          RUST_COLOR=$([ "${RUST_COVERAGE%.*}" -ge "$MINIMUM_COVERAGE_RUST" ] && echo "green" || echo "red")
+          DASHBOARD_COLOR=$([ "${DASHBOARD_COVERAGE%.*}" -ge "$MINIMUM_COVERAGE_JS" ] && echo "green" || echo "red")
+          API_COLOR=$([ "${API_COVERAGE%.*}" -ge "$MINIMUM_COVERAGE_JS" ] && echo "green" || echo "red")
+          
+          echo "Rust Coverage: ![Coverage](https://img.shields.io/badge/coverage-${RUST_COVERAGE}%25-${RUST_COLOR})" > badges/rust-coverage.md
+          echo "Dashboard Coverage: ![Coverage](https://img.shields.io/badge/coverage-${DASHBOARD_COVERAGE}%25-${DASHBOARD_COLOR})" > badges/dashboard-coverage.md
+          echo "API Coverage: ![Coverage](https://img.shields.io/badge/coverage-${API_COVERAGE}%25-${API_COLOR})" > badges/api-coverage.md
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: comprehensive-coverage-report
+          path: |
+            coverage-report.md
+            badges/
+          retention-days: 30
+
+      - name: Comment coverage report on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('coverage-report.md', 'utf8');
+            
+            // Find existing comment
+            const comments = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            const existingComment = comments.data.find(comment => 
+              comment.body.includes('SwiftConcur Test Coverage Report')
+            );
+            
+            if (existingComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                comment_id: existingComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report
+              });
+            }
+
+      - name: Set commit status
+        if: always()
+        run: |
+          if [ "$QUALITY_GATE_PASSED" = true ]; then
+            echo "✅ All quality gates passed - Coverage: $OVERALL_COVERAGE%"
+          else
+            echo "❌ Quality gates failed - Coverage: $OVERALL_COVERAGE%"
+            exit 1
+          fi
+
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [rust-tests, javascript-tests, integration-tests, coverage-report]
+    if: always()
+    
+    steps:
+      - name: Test Summary
+        run: |
+          echo "📋 Test Execution Summary"
+          echo "=========================="
+          echo "Rust Tests: ${{ needs.rust-tests.result }}"
+          echo "JavaScript Tests: ${{ needs.javascript-tests.result }}"
+          echo "Integration Tests: ${{ needs.integration-tests.result }}"
+          echo "Coverage Report: ${{ needs.coverage-report.result }}"
+          echo ""
+          
+          # Determine overall status
+          if [[ "${{ needs.rust-tests.result }}" == "success" && 
+                "${{ needs.javascript-tests.result }}" == "success" && 
+                "${{ needs.integration-tests.result }}" == "success" && 
+                "${{ needs.coverage-report.result }}" == "success" ]]; then
+            echo "✅ All tests passed successfully!"
+            echo "Code is ready for merge."
+          else
+            echo "❌ Some tests failed or were skipped."
+            echo "Please review the failing tests before merging."
+            exit 1
+          fi

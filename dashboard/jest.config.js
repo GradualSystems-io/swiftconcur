@@ -31,7 +31,34 @@ const customJestConfig = {
       lines: 80,
       statements: 80,
     },
+    // Component-specific thresholds
+    './components/**/*.{js,jsx,ts,tsx}': {
+      branches: 75,
+      functions: 75,
+      lines: 75,
+      statements: 75,
+    },
+    './lib/**/*.{js,jsx,ts,tsx}': {
+      branches: 85,
+      functions: 85,
+      lines: 85,
+      statements: 85,
+    },
   },
+  
+  // Enhanced coverage reporting
+  coverageReporters: [
+    'text',
+    'text-summary',
+    'lcov',
+    'html',
+    'json',
+    'json-summary',
+  ],
+  
+  // Fail on coverage threshold
+  coverageDirectory: 'coverage',
+  verbose: true,
   testPathIgnorePatterns: [
     '<rootDir>/.next/',
     '<rootDir>/node_modules/',

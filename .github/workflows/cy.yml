@@ -1,13 +1,69 @@
 name: Test & Lint
 on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
 jobs:
-  build:
+  test-and-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions-rs/toolchain@v1
-        with: { toolchain: stable, profile: minimal, override: true }
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest --locked
-      - run: cargo nextest run
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+        with: 
+          toolchain: stable
+          profile: minimal
+          override: true
+          components: rustfmt, clippy
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install testing tools
+        run: |
+          cargo install cargo-nextest --locked
+          cargo install cargo-tarpaulin --locked
+
+      - name: Check formatting
+        run: |
+          cd parser
+          cargo fmt --all -- --check
+          
+      - name: Run Clippy
+        run: |
+          cd parser
+          cargo clippy --workspace --all-targets -- -D warnings
+          
+      - name: Run tests
+        run: |
+          cd parser
+          # Run with nextest for speed
+          cargo nextest run --workspace --all-features
+          
+          # Also run doctests (nextest doesn't support them yet)
+          cargo test --doc --workspace
+          
+      - name: Generate coverage report
+        run: |
+          cd parser
+          cargo tarpaulin --workspace --engine llvm --out xml --output-dir ../coverage --fail-under 70
+          
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: coverage/cobertura.xml
+          flags: rust
+          fail_ci_if_error: true
+
+  # Call the comprehensive automated tests workflow
+  comprehensive-tests:
+    uses: ./.github/workflows/automated-tests.yml
+    needs: test-and-lint

@@ -1,0 +1,62 @@
+# Tarpaulin configuration for SwiftConcur parser
+[tarpaulin]
+# Use LLVM engine for better accuracy
+engine = "llvm"
+
+# Output formats
+out = ["Html", "Xml", "Json"]
+
+# Coverage thresholds
+fail-under = 80.0
+
+# Exclude certain files/directories from coverage
+exclude = [
+    "*/tests/*",
+    "*/test_*",
+    "*_test.rs",
+    "*/main.rs",
+    "*/benches/*",
+    "*/examples/*",
+]
+
+# Exclude certain patterns from coverage
+exclude-files = [
+    "../target/*",
+    "tests/*",
+    "benches/*",
+]
+
+# Count hits in tests
+count = true
+
+# Include all crates in workspace
+all = true
+
+# Timeout for test execution (seconds)
+timeout = 120
+
+# Don't show individual file coverage in stdout
+no-default-features = false
+
+# Ignore panics in coverage calculation
+ignore-panics = true
+
+# Exclude lines with specific patterns
+ignore = [
+    "unreachable!",
+    "unimplemented!",
+    "todo!",
+    "panic!",
+    "#[derive",
+    "assert",
+    "debug_assert",
+]
+
+# Run tests in release mode for better performance
+release = true
+
+# Include doctests in coverage
+run-types = ["Tests", "Doctests"]
+
+# Output directory
+output-dir = "coverage"

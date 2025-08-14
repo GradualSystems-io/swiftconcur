@@ -7,13 +7,23 @@ export default defineConfig({
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
     coverage: {
-      reporter: ['text', 'json', 'html'],
+      provider: 'v8',
+      reporter: ['text', 'text-summary', 'json', 'json-summary', 'html', 'lcov'],
+      reportsDirectory: 'coverage',
       exclude: [
         'node_modules/',
         'tests/',
         'dist/',
+        '.wrangler/',
+        'coverage/',
         '**/*.d.ts',
         '**/*.config.*',
+        'src/index.ts' // Entry point
+      ],
+      include: [
+        'src/**/*.{js,ts}',
+        '!src/**/*.test.{js,ts}',
+        '!src/**/*.spec.{js,ts}'
       ],
       thresholds: {
         global: {
@@ -22,7 +32,22 @@ export default defineConfig({
           lines: 80,
           statements: 80,
         },
+        // Service-specific thresholds
+        'src/services/**/*.{js,ts}': {
+          branches: 85,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/handlers/**/*.{js,ts}': {
+          branches: 75,
+          functions: 75,
+          lines: 75,
+          statements: 75,
+        }
       },
+      all: true,
+      skipFull: false
     },
     testTimeout: 10000,
     hookTimeout: 10000,
