@@ -1,0 +1,193 @@
+# =============================================================================
+# SwiftConcur Docker Build Optimization - .dockerignore
+# =============================================================================
+
+# Version control
+.git
+.gitignore
+.gitattributes
+.github/
+.gitmodules
+
+# Documentation
+README.md
+*.md
+docs/
+*.txt
+LICENSE
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Development tools
+.editorconfig
+.npmrc
+.yarnrc
+
+# Testing and coverage
+coverage/
+*.lcov
+.nyc_output/
+test-results/
+.coverage
+htmlcov/
+
+# Build artifacts (keep only what's needed)
+target/debug/
+target/doc/
+target/tmp/
+*/target/debug/
+*/target/doc/
+*/target/tmp/
+
+# Rust specific
+Cargo.lock.*
+*.pdb
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+
+# Package managers
+package-lock.json.backup
+yarn.lock.backup
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+.temp/
+
+# Cache directories
+.cache/
+.parcel-cache/
+.sass-cache/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Compiled binaries (except release)
+**/*.o
+**/*.so
+**/*.dylib
+**/*.dll
+
+# Archive files
+*.tar
+*.tar.gz
+*.tar.bz2
+*.zip
+*.rar
+*.7z
+
+# Backup files
+*.bak
+*.backup
+*.orig
+*.save
+
+# IDE specific
+.vscode/
+.idea/
+*.sublime-*
+.fleet/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Docker
+.dockerignore
+Dockerfile.dev
+Dockerfile.test
+docker-compose*.yml
+.docker/
+
+# CI/CD
+.travis.yml
+.circleci/
+.jenkins/
+azure-pipelines.yml
+buildspec.yml
+
+# Security
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+
+# Large test files
+*.large
+test-data/
+fixtures/large/
+
+# Benchmarks
+benchmark-results/
+*.bench
+
+# Profile data
+*.prof
+*.pprof
+
+# Keep only essential files for Docker build:
+# - Source code (parser/src/, scripts/)
+# - Configuration (Cargo.toml, package.json)
+# - Build scripts (entrypoint.sh)
+# - Runtime dependencies

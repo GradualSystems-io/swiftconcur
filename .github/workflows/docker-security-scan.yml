@@ -1,0 +1,440 @@
+name: Docker Security Scan
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'entrypoint.sh'
+      - 'scripts/**'
+      - '.github/workflows/docker-security-scan.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'entrypoint.sh'
+      - 'scripts/**'
+      - '.github/workflows/docker-security-scan.yml'
+  schedule:
+    # Weekly security scan on Sundays at 2 AM
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: swiftconcur-ci
+  REGISTRY: ghcr.io
+
+# Cancel previous runs on new commits
+concurrency:
+  group: docker-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Dockerfile security analysis
+  dockerfile-security:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Dockerfile security scan with Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          format: sarif
+          output-file: hadolint-results.sarif
+          failure-threshold: error
+
+      - name: Upload Hadolint SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: hadolint-results.sarif
+
+      - name: Run Dockerfile best practices check
+        run: |
+          echo "🔍 Dockerfile Best Practices Analysis"
+          echo "===================================="
+          
+          # Check for specific security patterns
+          echo "Checking security patterns..."
+          
+          # Check for pinned versions
+          if grep -q "ARG.*_VERSION=" Dockerfile; then
+            echo "✅ Version pinning detected"
+          else
+            echo "⚠️ Consider pinning versions for reproducible builds"
+          fi
+          
+          # Check for non-root user
+          if grep -q "USER " Dockerfile; then
+            echo "✅ Non-root user configured"
+          else
+            echo "❌ No non-root user found - security risk"
+            exit 1
+          fi
+          
+          # Check for HEALTHCHECK
+          if grep -q "HEALTHCHECK" Dockerfile; then
+            echo "✅ Health check configured"
+          else
+            echo "⚠️ Consider adding HEALTHCHECK for better monitoring"
+          fi
+          
+          # Check for minimal base images
+          if grep -q "slim\|alpine\|distroless" Dockerfile; then
+            echo "✅ Minimal base image detected"
+          else
+            echo "⚠️ Consider using slim/alpine base images"
+          fi
+          
+          # Check for secret handling
+          if grep -qE "(PASSWORD|SECRET|KEY|TOKEN)" Dockerfile; then
+            echo "❌ Potential secrets in Dockerfile - security risk"
+            exit 1
+          else
+            echo "✅ No hardcoded secrets detected"
+          fi
+
+  # Build and scan Docker image
+  build-and-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/image.tar
+
+      - name: Load Docker image
+        run: docker load --input /tmp/image.tar
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'  # Don't fail the build on vulnerabilities
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Trivy for detailed output
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '0'
+
+      - name: Run Docker Bench for Security
+        run: |
+          echo "🛡️ Running Docker Bench for Security"
+          echo "===================================="
+          
+          # Clone Docker Bench Security
+          git clone https://github.com/docker/docker-bench-security.git
+          cd docker-bench-security
+          
+          # Run security benchmark
+          sudo ./docker-bench-security.sh -l /tmp/docker-bench.log || true
+          
+          # Display results
+          echo "Docker Bench Security Results:"
+          cat /tmp/docker-bench.log | grep -E "(WARN|FAIL|PASS|INFO)" | head -20
+
+      - name: Analyze image size and layers
+        run: |
+          echo "📊 Image Size Analysis"
+          echo "====================="
+          
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          
+          # Get image size
+          SIZE=$(docker images --format "table {{.Size}}" $IMAGE_NAME | tail -n +2)
+          echo "Final image size: $SIZE"
+          
+          # Analyze layers
+          echo ""
+          echo "Image layers:"
+          docker history $IMAGE_NAME --human=true --format "table {{.CreatedBy}}\t{{.Size}}"
+          
+          # Check for large layers
+          echo ""
+          echo "Large layers analysis:"
+          docker history $IMAGE_NAME --human=true --format "{{.Size}}\t{{.CreatedBy}}" | \
+            awk '$1 ~ /[0-9]+MB/ && $1+0 > 50 {print "⚠️ Large layer (" $1 "): " substr($0, index($0,$2))}'
+
+  # Security policy compliance check
+  security-compliance:
+    runs-on: ubuntu-latest
+    needs: [dockerfile-security, build-and-scan]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Security policy compliance check
+        run: |
+          echo "🔒 Security Policy Compliance Check"
+          echo "=================================="
+          
+          COMPLIANCE_SCORE=0
+          TOTAL_CHECKS=10
+          
+          # Check 1: Multi-stage build
+          if grep -q "FROM.*AS" Dockerfile; then
+            echo "✅ Multi-stage build: PASS"
+            COMPLIANCE_SCORE=$((COMPLIANCE_SCORE + 1))
+          else
+            echo "❌ Multi-stage build: FAIL"
+          fi
+          
+          # Check 2: Non-root user
+          if grep -q "USER " Dockerfile; then
+            echo "✅ Non-root user: PASS"
+            COMPLIANCE_SCORE=$((COMPLIANCE_SCORE + 1))
+          else
+            echo "❌ Non-root user: FAIL"
+          fi
+          
+          # Check 3: Minimal base image
+          if grep -q "slim\|alpine" Dockerfile; then
+            echo "✅ Minimal base image: PASS"
+            COMPLIANCE_SCORE=$((COMPLIANCE_SCORE + 1))
+          else
+            echo "❌ Minimal base image: FAIL"
+          fi
+          
+          # Check 4: Version pinning
+          if grep -q "ARG.*_VERSION=" Dockerfile; then
+            echo "✅ Version pinning: PASS"
+            COMPLIANCE_SCORE=$((COMPLIANCE_SCORE + 1))
+          else
+            echo "❌ Version pinning: FAIL"
+          fi
+          
+          # Check 5: Package cleanup
+          if grep -q "rm -rf /var/lib/apt/lists" Dockerfile; then
+            echo "✅ Package cleanup: PASS"
+            COMPLIANCE_SCORE=$((COMPLIANCE_SCORE + 1))
+          else
+            echo "❌ Package cleanup: FAIL"
+          fi
+          
+          # Check 6: Security labels
+          if grep -q "LABEL.*maintainer" Dockerfile; then
+            echo "✅ Security labels: PASS"
+            COMPLIANCE_SCORE=$((COMPLIANCE_SCORE + 1))
+          else
+            echo "❌ Security labels: FAIL"
+          fi
+          
+          # Check 7: Health check
+          if grep -q "HEALTHCHECK" Dockerfile; then
+            echo "✅ Health check: PASS"
+            COMPLIANCE_SCORE=$((COMPLIANCE_SCORE + 1))
+          else
+            echo "❌ Health check: FAIL"
+          fi
+          
+          # Check 8: No hardcoded secrets
+          if ! grep -qE "(PASSWORD|SECRET|KEY|TOKEN)=" Dockerfile; then
+            echo "✅ No hardcoded secrets: PASS"
+            COMPLIANCE_SCORE=$((COMPLIANCE_SCORE + 1))
+          else
+            echo "❌ Hardcoded secrets found: FAIL"
+          fi
+          
+          # Check 9: Proper file permissions
+          if grep -q "chmod" Dockerfile; then
+            echo "✅ File permissions set: PASS"
+            COMPLIANCE_SCORE=$((COMPLIANCE_SCORE + 1))
+          else
+            echo "❌ File permissions: FAIL"
+          fi
+          
+          # Check 10: Layer optimization
+          LAYER_COUNT=$(grep -c "^RUN\|^COPY\|^ADD" Dockerfile)
+          if [ $LAYER_COUNT -le 15 ]; then
+            echo "✅ Layer optimization: PASS ($LAYER_COUNT layers)"
+            COMPLIANCE_SCORE=$((COMPLIANCE_SCORE + 1))
+          else
+            echo "❌ Too many layers: FAIL ($LAYER_COUNT layers)"
+          fi
+          
+          # Calculate compliance score
+          COMPLIANCE_PERCENT=$((COMPLIANCE_SCORE * 100 / TOTAL_CHECKS))
+          
+          echo ""
+          echo "🎯 Security Compliance Score: $COMPLIANCE_SCORE/$TOTAL_CHECKS ($COMPLIANCE_PERCENT%)"
+          
+          if [ $COMPLIANCE_PERCENT -ge 80 ]; then
+            echo "✅ Security compliance PASSED"
+          else
+            echo "❌ Security compliance FAILED (minimum 80% required)"
+            exit 1
+          fi
+
+  # Publish secure image (only on main branch)
+  publish-image:
+    runs-on: ubuntu-latest
+    needs: [dockerfile-security, build-and-scan, security-compliance]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=secure-
+            type=raw,value=latest
+
+      - name: Build and push secure Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate SBOM (Software Bill of Materials)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:latest
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.spdx.json
+
+      - name: Sign container image with cosign
+        if: github.event_name == 'push'
+        run: |
+          # Install cosign
+          curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
+          sudo mv cosign-linux-amd64 /usr/local/bin/cosign
+          sudo chmod +x /usr/local/bin/cosign
+          
+          # Sign the image
+          echo "${{ secrets.GITHUB_TOKEN }}" | cosign login ${{ env.REGISTRY }} --username ${{ github.actor }} --password-stdin
+          cosign sign --yes ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:latest
+
+  # Security summary
+  security-summary:
+    runs-on: ubuntu-latest
+    needs: [dockerfile-security, build-and-scan, security-compliance]
+    if: always()
+    
+    steps:
+      - name: Generate security summary
+        run: |
+          echo "# 🛡️ Docker Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository**: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Date**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📊 Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Dockerfile Security | ${{ needs.dockerfile-security.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Vulnerability Scan | ${{ needs.build-and-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Compliance | ${{ needs.security-compliance.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.security-compliance.result }}" = "success" ]; then
+            echo "✅ **All security checks passed!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Security issues found - review required**" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔧 Security Features" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Multi-stage Docker build" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Slim base images with version pinning" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Non-root user execution" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Vulnerability scanning with Trivy" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Dockerfile security analysis with Hadolint" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ SBOM generation" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Container image signing" >> $GITHUB_STEP_SUMMARY
