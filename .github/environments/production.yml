@@ -1,0 +1,71 @@
+name: production
+url: https://gradualsystems.io/SwiftConcur
+
+# Protection rules
+protection_rules:
+  required_reviewers: 2
+  wait_timer: 0
+  prevent_self_review: true
+
+# Environment variables
+variables:
+  NODE_ENV: production
+  DEPLOYMENT_ENV: production
+  LOG_LEVEL: info
+  ENABLE_METRICS: true
+
+# Deployment configuration
+deployment:
+  auto_deploy_branches:
+    - main
+  
+  # Manual approval required for production
+  require_approval: true
+  
+  # Health check configuration
+  health_check:
+    enabled: true
+    endpoint: /api/health
+    timeout: 30
+    retries: 5
+    
+  # Stricter performance thresholds for production
+  performance:
+    response_time_threshold: 1000  # 1 second
+    error_rate_threshold: 1        # 1%
+    uptime_threshold: 99.9         # 99.9%
+    
+  # Rollback configuration
+  rollback:
+    auto_rollback_on_failure: true
+    health_check_timeout: 600      # 10 minutes
+    backup_retention_days: 30
+    
+# Blue-green deployment settings
+blue_green:
+  enabled: true
+  traffic_split_duration: 300     # 5 minutes gradual traffic shift
+  monitoring_duration: 900        # 15 minutes monitoring period
+  
+# Required secrets (to be set in GitHub repository settings)
+required_secrets:
+  - PROD_SUPABASE_URL
+  - PROD_SUPABASE_ANON_KEY
+  - PROD_API_URL
+  - VERCEL_TOKEN
+  - VERCEL_ORG_ID
+  - VERCEL_PROJECT_ID
+  - CLOUDFLARE_API_TOKEN
+  
+# Notification configuration
+notifications:
+  slack:
+    enabled: true
+    channels:
+      - "#deployments"
+      - "#alerts"
+  email:
+    enabled: true
+    recipients:
+      - "ops@gradualsystems.io"
+      - "dev-team@gradualsystems.io"

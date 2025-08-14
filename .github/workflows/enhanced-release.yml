@@ -1,0 +1,519 @@
+name: Enhanced Release Pipeline
+
+on:
+  push:
+    tags: 
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+        - major
+        - minor
+        - patch
+        - prerelease
+      create_github_release:
+        description: 'Create GitHub release'
+        required: false
+        type: boolean
+        default: true
+      deploy_after_release:
+        description: 'Deploy to production after release'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+  packages: write
+  deployments: write
+
+jobs:
+  prepare-release:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+      should_deploy: ${{ steps.checks.outputs.should_deploy }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install semver tool
+        run: |
+          npm install -g semver
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Extract version from tag
+            VERSION="${GITHUB_REF#refs/tags/}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            # Calculate next version for manual dispatch
+            CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            NEXT_VERSION=$(semver -i ${{ github.event.inputs.version_type }} $CURRENT_VERSION)
+            echo "version=v$NEXT_VERSION" >> $GITHUB_OUTPUT
+            
+            # Create and push tag
+            git tag "v$NEXT_VERSION"
+            git push origin "v$NEXT_VERSION"
+          fi
+
+      - name: Generate comprehensive changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PREV_TAG=$(git describe --tags --abbrev=0 $VERSION^ 2>/dev/null || echo "")
+          
+          echo "# Release $VERSION" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "## 📅 Release Date: $(date +'%Y-%m-%d %H:%M:%S UTC')" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          
+          if [ -n "$PREV_TAG" ]; then
+            echo "## 📈 Changes since $PREV_TAG" >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            
+            # Get commits by type
+            FEATURES=$(git log $PREV_TAG..$VERSION --oneline --grep="^feat" --pretty=format:"- %s (%h)" || echo "")
+            FIXES=$(git log $PREV_TAG..$VERSION --oneline --grep="^fix" --pretty=format:"- %s (%h)" || echo "")
+            DOCS=$(git log $PREV_TAG..$VERSION --oneline --grep="^docs" --pretty=format:"- %s (%h)" || echo "")
+            CHORES=$(git log $PREV_TAG..$VERSION --oneline --grep="^chore" --pretty=format:"- %s (%h)" || echo "")
+            OTHER=$(git log $PREV_TAG..$VERSION --oneline --invert-grep --grep="^(feat|fix|docs|chore)" --pretty=format:"- %s (%h)" || echo "")
+            
+            if [ -n "$FEATURES" ]; then
+              echo "### 🚀 New Features" >> CHANGELOG.md
+              echo "$FEATURES" >> CHANGELOG.md
+              echo "" >> CHANGELOG.md
+            fi
+            
+            if [ -n "$FIXES" ]; then
+              echo "### 🐛 Bug Fixes" >> CHANGELOG.md
+              echo "$FIXES" >> CHANGELOG.md
+              echo "" >> CHANGELOG.md
+            fi
+            
+            if [ -n "$DOCS" ]; then
+              echo "### 📚 Documentation" >> CHANGELOG.md
+              echo "$DOCS" >> CHANGELOG.md
+              echo "" >> CHANGELOG.md
+            fi
+            
+            if [ -n "$CHORES" ]; then
+              echo "### 🔧 Maintenance" >> CHANGELOG.md
+              echo "$CHORES" >> CHANGELOG.md
+              echo "" >> CHANGELOG.md
+            fi
+            
+            if [ -n "$OTHER" ]; then
+              echo "### 🔄 Other Changes" >> CHANGELOG.md
+              echo "$OTHER" >> CHANGELOG.md
+              echo "" >> CHANGELOG.md
+            fi
+            
+            # Statistics
+            COMMIT_COUNT=$(git rev-list --count $PREV_TAG..$VERSION)
+            FILES_CHANGED=$(git diff --name-only $PREV_TAG..$VERSION | wc -l)
+            INSERTIONS=$(git diff --stat $PREV_TAG..$VERSION | tail -1 | grep -o '[0-9]* insertion' | cut -d' ' -f1 || echo "0")
+            DELETIONS=$(git diff --stat $PREV_TAG..$VERSION | tail -1 | grep -o '[0-9]* deletion' | cut -d' ' -f1 || echo "0")
+            
+            echo "## 📊 Statistics" >> CHANGELOG.md
+            echo "- **Commits**: $COMMIT_COUNT" >> CHANGELOG.md
+            echo "- **Files Changed**: $FILES_CHANGED" >> CHANGELOG.md
+            echo "- **Lines Added**: ${INSERTIONS:-0}" >> CHANGELOG.md
+            echo "- **Lines Removed**: ${DELETIONS:-0}" >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          else
+            echo "## 🎉 Initial Release" >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "This is the first release of SwiftConcur CI!" >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          fi
+          
+          echo "## 📦 Assets" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### CLI Binaries" >> CHANGELOG.md
+          echo "- **macOS Apple Silicon (M1/M2/M3)**: \`swiftconcur-cli-macos-arm64.tar.gz\`" >> CHANGELOG.md
+          echo "- **macOS Intel**: \`swiftconcur-cli-macos-x86_64.tar.gz\`" >> CHANGELOG.md
+          echo "- **Linux x86_64**: \`swiftconcur-cli-linux-x86_64.tar.gz\`" >> CHANGELOG.md
+          echo "- **Windows x86_64**: \`swiftconcur-cli-windows-x86_64.tar.gz\`" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Docker Images" >> CHANGELOG.md
+          echo "- **GitHub Action**: This release is available as a GitHub Action" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "## 🚀 Quick Start" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "\`\`\`bash" >> CHANGELOG.md
+          echo "# Download and use CLI" >> CHANGELOG.md
+          echo "curl -Ls https://github.com/${{ github.repository }}/releases/download/$VERSION/swiftconcur-cli-macos-x86_64.tar.gz | tar xz" >> CHANGELOG.md
+          echo "./swiftconcur-cli --help" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "# Use as GitHub Action" >> CHANGELOG.md
+          echo "- uses: ${{ github.repository }}@$VERSION" >> CHANGELOG.md
+          echo "  with:" >> CHANGELOG.md
+          echo "    scheme: 'YourScheme'" >> CHANGELOG.md
+          echo "    workspace-path: './YourApp.xcworkspace'" >> CHANGELOG.md
+          echo "\`\`\`" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "**Full Commit SHA**: \`$(git rev-parse HEAD)\`" >> CHANGELOG.md
+          
+          # Save changelog for later use
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat CHANGELOG.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Pre-release checks
+        id: checks
+        run: |
+          echo "🔍 Running pre-release checks..."
+          
+          # Check if tests pass
+          cd parser
+          cargo test --release
+          
+          # Check if CLI builds properly
+          cargo build --release
+          
+          # Verify version in Cargo.toml matches tag
+          CARGO_VERSION=$(grep '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          TAG_VERSION="${{ steps.version.outputs.version }}"
+          TAG_VERSION_CLEAN="${TAG_VERSION#v}"
+          
+          if [ "$CARGO_VERSION" != "$TAG_VERSION_CLEAN" ]; then
+            echo "❌ Version mismatch: Cargo.toml has $CARGO_VERSION but tag is $TAG_VERSION_CLEAN"
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "✅ All pre-release checks passed"
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+
+  build-release-assets:
+    name: Build Release Assets
+    needs: prepare-release
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            arch: arm64
+            platform: macos
+          - os: macos-13
+            target: x86_64-apple-darwin
+            arch: x86_64
+            platform: macos
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            platform: linux
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x86_64
+            platform: windows
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ matrix.os }}-${{ matrix.target }}-release-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build optimized binary
+        run: |
+          cd parser
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare release archive
+        shell: bash
+        run: |
+          mkdir -p release-staging
+          
+          # Set binary extension and platform-specific vars
+          if [[ "${{ matrix.platform }}" == "windows" ]]; then
+            BINARY_EXT=".exe"
+          else
+            BINARY_EXT=""
+          fi
+          
+          # Copy binary
+          cp target/${{ matrix.target }}/release/swiftconcur-parser${BINARY_EXT} release-staging/swiftconcur-cli${BINARY_EXT}
+          
+          # Create comprehensive README
+          cat > release-staging/README.md << 'EOF'
+          # SwiftConcur CLI ${{ needs.prepare-release.outputs.version }}
+          
+          Swift concurrency warning detection and analysis tool.
+          
+          ## Installation
+          
+          ### Quick Install (Recommended)
+          ```bash
+          curl -Ls https://github.com/${{ github.repository }}/releases/latest/download/swiftconcur-cli-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz | tar xz
+          ```
+          
+          ### Manual Install
+          1. Download the appropriate archive for your platform
+          2. Extract: `tar -xzf swiftconcur-cli-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz`
+          3. Make executable: `chmod +x swiftconcur-cli` (Linux/macOS only)
+          4. Optionally add to PATH
+          
+          ## Usage Examples
+          
+          ### Parse Xcode Build Results
+          ```bash
+          # From xcresult JSON (recommended)
+          ./swiftconcur-cli -f warnings.json --format markdown
+          
+          # From raw xcodebuild output
+          xcodebuild build ... 2>&1 | ./swiftconcur-cli --format json
+          
+          # With warning threshold (CI/CD)
+          ./swiftconcur-cli -f warnings.json --threshold 5 --fail-on-warnings
+          ```
+          
+          ### Filter and Format Output
+          ```bash
+          # Filter specific warning types
+          ./swiftconcur-cli -f warnings.json --filter actor-isolation
+          ./swiftconcur-cli -f warnings.json --filter sendable
+          
+          # Different output formats
+          ./swiftconcur-cli -f warnings.json --format markdown
+          ./swiftconcur-cli -f warnings.json --format slack
+          ./swiftconcur-cli -f warnings.json --format json
+          
+          # Include code context
+          ./swiftconcur-cli -f warnings.json --context 5
+          ```
+          
+          ### Baseline Comparison
+          ```bash
+          # Create baseline
+          ./swiftconcur-cli -f main-branch.json > baseline.json
+          
+          # Compare against baseline
+          ./swiftconcur-cli -f feature-branch.json --baseline baseline.json
+          ```
+          
+          ## Command Line Options
+          
+          | Option | Description | Default |
+          |--------|-------------|---------|
+          | `-f, --file` | Input file path | stdin |
+          | `--format` | Output format (json, markdown, slack) | json |
+          | `--threshold` | Max warnings allowed | unlimited |
+          | `--baseline` | Baseline file for comparison | none |
+          | `--filter` | Filter by warning type | none |
+          | `--context` | Lines of code context | 3 |
+          | `--fail-on-warnings` | Exit 1 if warnings found | false |
+          | `--verbose` | Enable verbose logging | false |
+          | `--help` | Show help message | - |
+          | `--version` | Show version info | - |
+          
+          ## Warning Types Detected
+          
+          - **Actor Isolation**: `actor-isolated.*cannot be referenced`
+          - **Sendable Conformance**: `does not conform to.*Sendable`  
+          - **Data Race**: `data race|race condition`
+          - **Performance**: `performance.*concurrency`
+          
+          ## Exit Codes
+          
+          - `0`: Success (no warnings or warnings within threshold)
+          - `1`: Warnings exceeded threshold
+          - `2`: Parse error or invalid input
+          
+          ## GitHub Action Usage
+          
+          ```yaml
+          - uses: ${{ github.repository }}@${{ needs.prepare-release.outputs.version }}
+            with:
+              scheme: 'MyApp'
+              workspace-path: './MyApp.xcworkspace'
+              threshold: 10
+              post-comment: true
+          ```
+          
+          ## Support
+          
+          - **Documentation**: https://github.com/${{ github.repository }}/blob/main/README.md
+          - **Issues**: https://github.com/${{ github.repository }}/issues
+          - **Discussions**: https://github.com/${{ github.repository }}/discussions
+          
+          ---
+          
+          **Version**: ${{ needs.prepare-release.outputs.version }}  
+          **Platform**: ${{ matrix.platform }}-${{ matrix.arch }}  
+          **Build Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")  
+          **Commit**: $(git rev-parse --short HEAD)
+          EOF
+          
+          # Create LICENSE file
+          cp ../LICENSE release-staging/ 2>/dev/null || echo "# License\n\nSee repository for license information." > release-staging/LICENSE
+          
+          # Create archive
+          cd release-staging
+          tar -czf ../swiftconcur-cli-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz .
+          cd ..
+          
+          # Verify archive
+          echo "📦 Created archive contents:"
+          tar -tzf swiftconcur-cli-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: swiftconcur-cli-${{ matrix.platform }}-${{ matrix.arch }}
+          path: swiftconcur-cli-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+          retention-days: 30
+
+  create-github-release:
+    name: Create GitHub Release
+    needs: [prepare-release, build-release-assets]
+    runs-on: ubuntu-latest
+    if: needs.prepare-release.outputs.should_deploy == 'true' && (github.event_name == 'push' || github.event.inputs.create_github_release == 'true')
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Organize release assets
+        run: |
+          mkdir -p final-assets
+          
+          echo "📁 Downloaded artifacts:"
+          find release-assets -name "*.tar.gz" -type f
+          
+          # Move all archives to final-assets directory
+          find release-assets -name "*.tar.gz" -type f -exec cp {} final-assets/ \;
+          
+          echo "📦 Final release assets:"
+          ls -la final-assets/
+
+      - name: Generate release notes
+        run: |
+          cat > RELEASE_NOTES.md << 'EOF'
+          ${{ needs.prepare-release.outputs.changelog }}
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.version }}
+          name: SwiftConcur CLI ${{ needs.prepare-release.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          files: final-assets/*
+          draft: false
+          prerelease: ${{ contains(needs.prepare-release.outputs.version, 'pre') || contains(needs.prepare-release.outputs.version, 'rc') || contains(needs.prepare-release.outputs.version, 'alpha') || contains(needs.prepare-release.outputs.version, 'beta') }}
+          make_latest: true
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update package managers
+        run: |
+          echo "📦 Updating package manager configurations..."
+          # This would update Homebrew formula, Chocolatey package, etc.
+          # For now, just log what would be done
+          echo "- Would update Homebrew formula with new version and checksums"
+          echo "- Would update Chocolatey package metadata"
+          echo "- Would update Docker image tags"
+
+  deploy-after-release:
+    name: Deploy Production After Release
+    needs: [prepare-release, create-github-release]
+    runs-on: ubuntu-latest
+    if: needs.prepare-release.outputs.should_deploy == 'true' && (github.event_name == 'push' || github.event.inputs.deploy_after_release == 'true')
+    
+    steps:
+      - name: Trigger production deployment
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'enhanced-ci.yml',
+              ref: 'main',
+              inputs: {
+                environment: 'production'
+              }
+            });
+
+      - name: Create deployment record
+        run: |
+          echo "📝 Recording deployment..."
+          echo "Version: ${{ needs.prepare-release.outputs.version }}"
+          echo "Timestamp: $(date -u)"
+          echo "Commit: ${{ github.sha }}"
+
+  post-release:
+    name: Post-Release Tasks
+    needs: [prepare-release, create-github-release]
+    runs-on: ubuntu-latest
+    if: always() && needs.prepare-release.outputs.should_deploy == 'true'
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update version badges
+        run: |
+          echo "🔖 Updating version badges and documentation..."
+          # This would update README badges, documentation links, etc.
+          echo "Latest version: ${{ needs.prepare-release.outputs.version }}"
+
+      - name: Notify stakeholders
+        run: |
+          echo "📢 Notifying stakeholders of new release..."
+          echo "Release: ${{ needs.prepare-release.outputs.version }}"
+          echo "Status: ${{ job.status }}"
+          
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Release completed successfully!"
+            echo "🔗 https://github.com/${{ github.repository }}/releases/tag/${{ needs.prepare-release.outputs.version }}"
+          else
+            echo "❌ Release had issues, check the logs"
+          fi
+
+      - name: Schedule cleanup
+        run: |
+          echo "🧹 Scheduling cleanup tasks..."
+          echo "- Clean up old build caches"
+          echo "- Archive old artifacts" 
+          echo "- Update dependency caches"

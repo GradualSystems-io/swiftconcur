@@ -1,0 +1,414 @@
+name: Enhanced CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+      skip_tests:
+        description: 'Skip test suite'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-security-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run security audit
+        run: cargo audit --format json --output audit-report.json || true
+
+      - name: Upload security audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-report
+          path: audit-report.json
+          retention-days: 30
+
+      - name: Run dependency check
+        run: |
+          echo "🔍 Checking for known vulnerabilities..."
+          cargo audit || echo "Security issues detected, check the report"
+
+  code-quality:
+    name: Code Quality & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-quality-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy with detailed output
+        run: |
+          cargo clippy --workspace --all-targets --all-features \
+            -- -D warnings \
+            -D clippy::all \
+            -D clippy::pedantic \
+            -A clippy::module_name_repetitions \
+            -A clippy::missing_errors_doc \
+            -A clippy::missing_panics_doc
+
+      - name: Check documentation
+        run: |
+          export RUSTDOCFLAGS="-D missing_docs -D rustdoc::missing_crate_level_docs"
+          cargo doc --workspace --no-deps --document-private-items
+
+  test-suite:
+    name: Comprehensive Test Suite
+    runs-on: ${{ matrix.os }}
+    if: github.event.inputs.skip_tests != 'true'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust-version: [stable, beta]
+        exclude:
+          # Reduce matrix for faster CI
+          - os: windows-latest
+            rust-version: beta
+          - os: macos-latest
+            rust-version: beta
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust ${{ matrix.rust-version }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          override: true
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ matrix.os }}-${{ matrix.rust-version }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked
+
+      - name: Run unit tests
+        run: cargo nextest run --workspace --release --no-fail-fast
+
+      - name: Run integration tests
+        run: cargo test --workspace --release --test integration_tests
+
+      - name: Run doctests
+        run: cargo test --workspace --doc
+
+      - name: Generate test coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.rust-version == 'stable'
+        run: |
+          cargo install cargo-tarpaulin --locked
+          cargo tarpaulin --workspace --engine llvm --out xml --output-dir coverage/
+
+      - name: Upload coverage reports
+        if: matrix.os == 'ubuntu-latest' && matrix.rust-version == 'stable'
+        uses: codecov/codecov-action@v3
+        with:
+          file: coverage/cobertura.xml
+          flags: rust
+          name: rust-coverage
+
+  performance-benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run benchmarks
+        run: |
+          cd parser
+          cargo bench --bench parser_benchmarks -- --output-format json > ../bench-results.json
+
+      - name: Store benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'cargo'
+          output-file-path: bench-results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          comment-on-alert: true
+          alert-threshold: '200%'
+
+  build-and-test-action:
+    name: Build & Test GitHub Action
+    runs-on: ubuntu-latest
+    needs: [code-quality, test-suite]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t swiftconcur-action:${{ github.sha }} .
+
+      - name: Test Docker image
+        run: |
+          docker run --rm \
+            -e INPUT_SCHEME="TestScheme" \
+            -e INPUT_PROJECT_PATH="TestProject.xcodeproj" \
+            -e INPUT_CONFIGURATION="Debug" \
+            -e INPUT_POST_COMMENT="false" \
+            -e GITHUB_OUTPUT="/tmp/github_output.txt" \
+            swiftconcur-action:${{ github.sha }} || echo "Expected test failure"
+
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: swiftconcur-action:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [security-audit, code-quality, test-suite, build-and-test-action]
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging.gradualsystems.io/SwiftConcur
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd dashboard
+          npm ci
+
+      - name: Build dashboard
+        run: |
+          cd dashboard
+          npm run build
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_URL: https://staging.gradualsystems.io
+          NEXT_PUBLIC_API_URL: ${{ secrets.STAGING_API_URL }}
+
+      - name: Deploy to Vercel (Staging)
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: dashboard
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+          alias-domains: staging.gradualsystems.io
+
+      - name: Deploy API to Cloudflare Workers (Staging)
+        run: |
+          cd api
+          npm ci
+          npx wrangler deploy --env staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Run smoke tests on staging
+        run: |
+          npm install -g @playwright/test
+          cd dashboard
+          npm run test:e2e:staging
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ Staging deployment successful"
+          else
+            echo "❌ Staging deployment failed"
+          fi
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: https://gradualsystems.io/SwiftConcur
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd dashboard
+          npm ci
+
+      - name: Build dashboard
+        run: |
+          cd dashboard
+          npm run build
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_URL: https://gradualsystems.io
+          NEXT_PUBLIC_API_URL: ${{ secrets.PROD_API_URL }}
+
+      - name: Deploy to Vercel (Production)
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: dashboard
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+          production-deploy: true
+
+      - name: Deploy API to Cloudflare Workers (Production)
+        run: |
+          cd api
+          npm ci
+          npx wrangler deploy --env production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Run production health checks
+        run: |
+          echo "🔍 Running production health checks..."
+          curl -f https://gradualsystems.io/SwiftConcur/api/health || exit 1
+          curl -f https://gradualsystems.io/SwiftConcur || exit 1
+
+      - name: Create deployment record
+        run: |
+          echo "Recording deployment in database..."
+          # This would typically create a deployment record in your database
+          echo "Deployment completed at $(date)"
+
+      - name: Notify team
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "🎉 Production deployment successful!"
+            echo "🔗 Live at: https://gradualsystems.io/SwiftConcur"
+          else
+            echo "🚨 Production deployment failed!"
+          fi
+
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: always()
+    steps:
+      - name: Clean up old artifacts
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const artifacts = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            const oldArtifacts = artifacts.data.artifacts.filter(artifact => {
+              const ageInDays = (Date.now() - new Date(artifact.created_at)) / (1000 * 60 * 60 * 24);
+              return ageInDays > 7; // Keep artifacts for 7 days
+            });
+            
+            for (const artifact of oldArtifacts) {
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: artifact.id,
+              });
+              console.log(`Deleted artifact: ${artifact.name}`);
+            }

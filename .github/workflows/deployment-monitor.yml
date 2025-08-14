@@ -1,0 +1,593 @@
+name: Deployment Monitoring & Rollback
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+        - monitor
+        - rollback
+        - health_check
+        - performance_test
+      environment:
+        description: 'Environment'
+        required: true
+        type: choice
+        options:
+        - staging
+        - production
+      rollback_version:
+        description: 'Version to rollback to (if rollback action)'
+        required: false
+        type: string
+
+env:
+  DEPLOYMENT_TIMEOUT: 600  # 10 minutes
+
+jobs:
+  monitor-deployment:
+    name: Monitor Deployment Health
+    runs-on: ubuntu-latest
+    if: github.event_name == 'deployment_status' || github.event.inputs.action == 'monitor'
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract deployment info
+        id: deployment
+        run: |
+          if [ "${{ github.event_name }}" = "deployment_status" ]; then
+            echo "environment=${{ github.event.deployment.environment }}" >> $GITHUB_OUTPUT
+            echo "status=${{ github.event.deployment_status.state }}" >> $GITHUB_OUTPUT
+            echo "url=${{ github.event.deployment_status.target_url }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "status=in_progress" >> $GITHUB_OUTPUT
+            if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+              echo "url=https://gradualsystems.io/SwiftConcur" >> $GITHUB_OUTPUT
+            else
+              echo "url=https://staging.gradualsystems.io/SwiftConcur" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Setup monitoring tools
+        run: |
+          # Install monitoring dependencies
+          npm install -g @playwright/test
+          npm install axios cheerio
+
+      - name: Wait for deployment to be ready
+        run: |
+          echo "⏳ Waiting for deployment to be ready..."
+          URL="${{ steps.deployment.outputs.url }}"
+          TIMEOUT=${{ env.DEPLOYMENT_TIMEOUT }}
+          START_TIME=$(date +%s)
+          
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            
+            if [ $ELAPSED -gt $TIMEOUT ]; then
+              echo "❌ Deployment timeout after ${TIMEOUT}s"
+              exit 1
+            fi
+            
+            echo "🔍 Checking $URL (${ELAPSED}s elapsed)..."
+            
+            if curl -f -s --max-time 30 "$URL" >/dev/null 2>&1; then
+              echo "✅ Deployment is responding"
+              break
+            fi
+            
+            echo "⏳ Still waiting... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep 10
+          done
+
+      - name: Run comprehensive health checks
+        id: health_checks
+        run: |
+          URL="${{ steps.deployment.outputs.url }}"
+          echo "🏥 Running health checks for $URL"
+          
+          # Create health check script
+          cat > health_check.js << 'EOF'
+          const axios = require('axios');
+          const fs = require('fs');
+          
+          const baseUrl = process.argv[2];
+          const results = {
+            timestamp: new Date().toISOString(),
+            baseUrl,
+            checks: [],
+            overall: 'unknown'
+          };
+          
+          async function checkEndpoint(name, path, expectedStatus = 200) {
+            try {
+              const start = Date.now();
+              const response = await axios.get(`${baseUrl}${path}`, {
+                timeout: 30000,
+                validateStatus: (status) => status < 500
+              });
+              const duration = Date.now() - start;
+              
+              const check = {
+                name,
+                path,
+                status: response.status,
+                duration,
+                success: response.status === expectedStatus,
+                responseSize: JSON.stringify(response.data).length
+              };
+              
+              results.checks.push(check);
+              console.log(`${check.success ? '✅' : '❌'} ${name}: ${check.status} (${check.duration}ms)`);
+              return check.success;
+            } catch (error) {
+              const check = {
+                name,
+                path,
+                status: error.response?.status || 0,
+                duration: 30000,
+                success: false,
+                error: error.message
+              };
+              
+              results.checks.push(check);
+              console.log(`❌ ${name}: ${error.message}`);
+              return false;
+            }
+          }
+          
+          async function runChecks() {
+            console.log(`🔍 Running health checks for ${baseUrl}`);
+            
+            const checks = [
+              ['Homepage', '/'],
+              ['Login Page', '/auth/login'],
+              ['API Health', '/api/health', 200],
+              ['Dashboard', '/dashboard', 200]
+            ];
+            
+            let passedChecks = 0;
+            for (const [name, path, expectedStatus] of checks) {
+              if (await checkEndpoint(name, path, expectedStatus)) {
+                passedChecks++;
+              }
+            }
+            
+            results.overall = passedChecks === checks.length ? 'healthy' : 
+                            passedChecks > checks.length / 2 ? 'degraded' : 'unhealthy';
+            
+            // Save results
+            fs.writeFileSync('health_results.json', JSON.stringify(results, null, 2));
+            
+            console.log(`\n📊 Health Check Summary:`);
+            console.log(`- Passed: ${passedChecks}/${checks.length}`);
+            console.log(`- Overall Status: ${results.overall}`);
+            console.log(`- Average Response Time: ${Math.round(results.checks.reduce((sum, check) => sum + check.duration, 0) / results.checks.length)}ms`);
+            
+            return results.overall === 'healthy';
+          }
+          
+          runChecks().then(success => {
+            process.exit(success ? 0 : 1);
+          });
+          EOF
+          
+          npm install axios
+          node health_check.js "$URL"
+          
+          # Set output based on results
+          HEALTH_STATUS=$(node -e "console.log(JSON.parse(require('fs').readFileSync('health_results.json', 'utf8')).overall)")
+          echo "health_status=$HEALTH_STATUS" >> $GITHUB_OUTPUT
+
+      - name: Run performance tests
+        id: performance
+        run: |
+          echo "⚡ Running performance tests..."
+          
+          # Create performance test script
+          cat > performance_test.js << 'EOF'
+          const axios = require('axios');
+          
+          const baseUrl = process.argv[2];
+          const results = {
+            timestamp: new Date().toISOString(),
+            tests: []
+          };
+          
+          async function testEndpoint(name, path, iterations = 5) {
+            console.log(`📊 Testing ${name} (${iterations} iterations)...`);
+            
+            const times = [];
+            let errors = 0;
+            
+            for (let i = 0; i < iterations; i++) {
+              try {
+                const start = Date.now();
+                await axios.get(`${baseUrl}${path}`, { timeout: 30000 });
+                const duration = Date.now() - start;
+                times.push(duration);
+              } catch (error) {
+                errors++;
+                console.log(`  Attempt ${i + 1}: Error - ${error.message}`);
+              }
+            }
+            
+            if (times.length > 0) {
+              const avg = times.reduce((sum, time) => sum + time, 0) / times.length;
+              const min = Math.min(...times);
+              const max = Math.max(...times);
+              const p95 = times.sort((a, b) => a - b)[Math.floor(times.length * 0.95)];
+              
+              const test = {
+                name,
+                path,
+                iterations,
+                errors,
+                avgResponseTime: Math.round(avg),
+                minResponseTime: min,
+                maxResponseTime: max,
+                p95ResponseTime: p95,
+                successRate: ((iterations - errors) / iterations * 100).toFixed(1)
+              };
+              
+              results.tests.push(test);
+              console.log(`  ✅ Avg: ${test.avgResponseTime}ms, Min: ${test.minResponseTime}ms, Max: ${test.maxResponseTime}ms, P95: ${test.p95ResponseTime}ms, Success: ${test.successRate}%`);
+              
+              return test;
+            } else {
+              console.log(`  ❌ All requests failed`);
+              return null;
+            }
+          }
+          
+          async function runPerformanceTests() {
+            const tests = [
+              ['Homepage Load', '/'],
+              ['API Response', '/api/health'],
+              ['Dashboard Load', '/dashboard']
+            ];
+            
+            for (const [name, path] of tests) {
+              await testEndpoint(name, path);
+            }
+            
+            require('fs').writeFileSync('performance_results.json', JSON.stringify(results, null, 2));
+            
+            // Check for performance regressions
+            const avgTimes = results.tests.map(t => t.avgResponseTime);
+            const overallAvg = avgTimes.reduce((sum, time) => sum + time, 0) / avgTimes.length;
+            
+            console.log(`\n⚡ Performance Summary:`);
+            console.log(`- Overall Average Response Time: ${Math.round(overallAvg)}ms`);
+            console.log(`- Slowest Endpoint: ${Math.max(...avgTimes)}ms`);
+            console.log(`- Fastest Endpoint: ${Math.min(...avgTimes)}ms`);
+            
+            // Performance thresholds
+            const WARNING_THRESHOLD = 2000;  // 2 seconds
+            const ERROR_THRESHOLD = 5000;    // 5 seconds
+            
+            if (overallAvg > ERROR_THRESHOLD) {
+              console.log(`❌ CRITICAL: Average response time ${Math.round(overallAvg)}ms exceeds ${ERROR_THRESHOLD}ms threshold`);
+              return false;
+            } else if (overallAvg > WARNING_THRESHOLD) {
+              console.log(`⚠️  WARNING: Average response time ${Math.round(overallAvg)}ms exceeds ${WARNING_THRESHOLD}ms threshold`);
+              return true; // Don't fail, but warn
+            } else {
+              console.log(`✅ Performance is within acceptable limits`);
+              return true;
+            }
+          }
+          
+          runPerformanceTests().then(success => {
+            process.exit(success ? 0 : 1);
+          });
+          EOF
+          
+          URL="${{ steps.deployment.outputs.url }}"
+          if node performance_test.js "$URL"; then
+            echo "performance_status=good" >> $GITHUB_OUTPUT
+          else
+            echo "performance_status=poor" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload monitoring results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: monitoring-results-${{ steps.deployment.outputs.environment }}-${{ github.run_number }}
+          path: |
+            health_results.json
+            performance_results.json
+          retention-days: 30
+
+      - name: Determine overall deployment status
+        id: overall_status
+        run: |
+          HEALTH="${{ steps.health_checks.outputs.health_status }}"
+          PERFORMANCE="${{ steps.performance.outputs.performance_status }}"
+          
+          echo "Health: $HEALTH"
+          echo "Performance: $PERFORMANCE"
+          
+          if [ "$HEALTH" = "healthy" ] && [ "$PERFORMANCE" = "good" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "✅ Deployment is healthy and performing well"
+          elif [ "$HEALTH" = "healthy" ] && [ "$PERFORMANCE" = "poor" ]; then
+            echo "status=warning" >> $GITHUB_OUTPUT
+            echo "⚠️ Deployment is healthy but performance is degraded"
+          elif [ "$HEALTH" = "degraded" ]; then
+            echo "status=warning" >> $GITHUB_OUTPUT
+            echo "⚠️ Deployment has some health issues"
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "❌ Deployment is unhealthy"
+          fi
+
+      - name: Create monitoring report
+        run: |
+          cat > monitoring_report.md << EOF
+          # 🔍 Deployment Monitoring Report
+          
+          **Environment:** ${{ steps.deployment.outputs.environment }}  
+          **URL:** ${{ steps.deployment.outputs.url }}  
+          **Status:** ${{ steps.overall_status.outputs.status }}  
+          **Timestamp:** $(date -u)  
+          
+          ## Health Checks
+          
+          $(node -e "
+            const results = JSON.parse(require('fs').readFileSync('health_results.json', 'utf8'));
+            console.log('**Overall Health:** ' + results.overall);
+            console.log('');
+            console.log('| Endpoint | Status | Duration | Result |');
+            console.log('|----------|--------|----------|---------|');
+            results.checks.forEach(check => {
+              const icon = check.success ? '✅' : '❌';
+              console.log(\`| \${check.name} | \${check.status} | \${check.duration}ms | \${icon} |\`);
+            });
+          ")
+          
+          ## Performance Tests
+          
+          $(node -e "
+            const results = JSON.parse(require('fs').readFileSync('performance_results.json', 'utf8'));
+            console.log('| Test | Avg | Min | Max | P95 | Success Rate |');
+            console.log('|------|-----|-----|-----|-----|--------------|');
+            results.tests.forEach(test => {
+              console.log(\`| \${test.name} | \${test.avgResponseTime}ms | \${test.minResponseTime}ms | \${test.maxResponseTime}ms | \${test.p95ResponseTime}ms | \${test.successRate}% |\`);
+            });
+          ")
+          
+          ## Recommendations
+          
+          $(node -e "
+            const health = JSON.parse(require('fs').readFileSync('health_results.json', 'utf8'));
+            const performance = JSON.parse(require('fs').readFileSync('performance_results.json', 'utf8'));
+            
+            console.log('');
+            if (health.overall !== 'healthy') {
+              console.log('- ⚠️ Health issues detected - investigate failing endpoints');
+            }
+            
+            const avgTimes = performance.tests.map(t => t.avgResponseTime);
+            const overallAvg = avgTimes.reduce((sum, time) => sum + time, 0) / avgTimes.length;
+            
+            if (overallAvg > 2000) {
+              console.log('- ⚠️ Performance is slow - consider optimization');
+            }
+            if (overallAvg > 5000) {
+              console.log('- 🚨 Performance is critically slow - immediate action required');
+            }
+            
+            console.log('- ✅ Monitor metrics continue to be within acceptable ranges');
+          ")
+          EOF
+          
+          echo "📊 Monitoring Report:"
+          cat monitoring_report.md
+
+      - name: Comment on PR if applicable
+        if: github.event.pull_request.number
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('monitoring_report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.payload.pull_request.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+
+  rollback-deployment:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'rollback'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate rollback version
+        id: validate
+        run: |
+          ROLLBACK_VERSION="${{ github.event.inputs.rollback_version }}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          
+          if [ -z "$ROLLBACK_VERSION" ]; then
+            echo "❌ Rollback version is required"
+            exit 1
+          fi
+          
+          # Check if version exists
+          if ! git tag -l | grep -q "^${ROLLBACK_VERSION}$"; then
+            echo "❌ Version $ROLLBACK_VERSION not found"
+            echo "Available versions:"
+            git tag -l --sort=-version:refname | head -10
+            exit 1
+          fi
+          
+          echo "✅ Rolling back $ENVIRONMENT to $ROLLBACK_VERSION"
+          echo "rollback_version=$ROLLBACK_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create rollback backup
+        run: |
+          echo "💾 Creating backup of current deployment..."
+          BACKUP_TAG="backup-$(date +%Y%m%d-%H%M%S)-${{ github.event.inputs.environment }}"
+          git tag "$BACKUP_TAG" HEAD
+          git push origin "$BACKUP_TAG"
+          echo "Created backup tag: $BACKUP_TAG"
+
+      - name: Checkout rollback version
+        run: |
+          git checkout ${{ steps.validate.outputs.rollback_version }}
+          echo "📍 Checked out version ${{ steps.validate.outputs.rollback_version }}"
+
+      - name: Deploy rollback version
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          
+          if [ "$ENVIRONMENT" = "production" ]; then
+            echo "🚀 Rolling back production..."
+            # Trigger production deployment workflow
+            gh workflow run enhanced-ci.yml \
+              --field environment=production \
+              --field rollback=true
+          else
+            echo "🚀 Rolling back staging..."
+            # Trigger staging deployment workflow  
+            gh workflow run enhanced-ci.yml \
+              --field environment=staging \
+              --field rollback=true
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Monitor rollback
+        run: |
+          echo "🔍 Monitoring rollback deployment..."
+          sleep 60  # Wait for deployment to start
+          
+          # Trigger monitoring workflow
+          gh workflow run deployment-monitor.yml \
+            --field action=monitor \
+            --field environment=${{ github.event.inputs.environment }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create rollback summary
+        run: |
+          cat > rollback_summary.md << EOF
+          # 🔄 Rollback Summary
+          
+          **Environment:** ${{ github.event.inputs.environment }}
+          **Rollback To:** ${{ steps.validate.outputs.rollback_version }}
+          **Initiated By:** ${{ github.actor }}
+          **Timestamp:** $(date -u)
+          **Status:** Completed
+          
+          ## Actions Taken
+          - ✅ Validated rollback version exists
+          - ✅ Created backup of current deployment
+          - ✅ Checked out rollback version
+          - ✅ Triggered deployment of rollback version
+          - ✅ Initiated monitoring of rollback
+          
+          ## Next Steps
+          - Monitor the rollback deployment health
+          - Investigate the issues that required rollback
+          - Plan fix and re-deployment when ready
+          
+          ## Backup Information
+          Current deployment backed up with timestamp tag for easy recovery.
+          EOF
+          
+          echo "📋 Rollback Summary:"
+          cat rollback_summary.md
+
+  emergency-procedures:
+    name: Emergency Procedures
+    runs-on: ubuntu-latest
+    if: failure() && (github.event_name == 'deployment_status' || github.event.inputs.action == 'monitor')
+    
+    steps:
+      - name: Emergency notification
+        run: |
+          echo "🚨 EMERGENCY: Deployment monitoring detected critical issues!"
+          echo "Environment: ${{ github.event.inputs.environment || github.event.deployment.environment }}"
+          echo "Timestamp: $(date -u)"
+          echo ""
+          echo "Immediate actions taken:"
+          echo "- Deployment marked as failed"
+          echo "- Monitoring results archived"
+          echo "- Emergency procedures activated"
+          echo ""
+          echo "Required manual actions:"
+          echo "1. Investigate deployment logs"
+          echo "2. Check application health manually"
+          echo "3. Consider immediate rollback if necessary"
+          echo "4. Notify stakeholders"
+
+      - name: Auto-rollback on critical failure
+        if: github.event.inputs.environment == 'production' || github.event.deployment.environment == 'production'
+        run: |
+          echo "🔄 Initiating automatic rollback for production..."
+          
+          # Get last successful version
+          LAST_SUCCESSFUL=$(git tag -l --sort=-version:refname | head -1)
+          
+          if [ -n "$LAST_SUCCESSFUL" ]; then
+            echo "Rolling back to: $LAST_SUCCESSFUL"
+            gh workflow run deployment-monitor.yml \
+              --field action=rollback \
+              --field environment=production \
+              --field rollback_version="$LAST_SUCCESSFUL"
+          else
+            echo "❌ No previous version found for rollback"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup:
+    name: Cleanup Old Monitoring Data
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Clean up old artifacts
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const artifacts = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            const monitoringArtifacts = artifacts.data.artifacts.filter(artifact => 
+              artifact.name.startsWith('monitoring-results-')
+            );
+            
+            // Keep only last 30 monitoring artifacts
+            const oldMonitoringArtifacts = monitoringArtifacts
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+              .slice(30);
+            
+            for (const artifact of oldMonitoringArtifacts) {
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: artifact.id,
+              });
+              console.log(`Deleted old monitoring artifact: ${artifact.name}`);
+            }

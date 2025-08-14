@@ -1,0 +1,47 @@
+name: staging
+url: https://staging.gradualsystems.io/SwiftConcur
+
+# Protection rules
+protection_rules:
+  required_reviewers: 0
+  wait_timer: 0
+
+# Environment variables (secrets should be set in GitHub settings)
+variables:
+  NODE_ENV: staging
+  DEPLOYMENT_ENV: staging
+  LOG_LEVEL: debug
+  ENABLE_METRICS: true
+
+# Deployment configuration
+deployment:
+  auto_deploy_branches:
+    - develop
+  
+  # Health check configuration
+  health_check:
+    enabled: true
+    endpoint: /api/health
+    timeout: 30
+    retries: 3
+    
+  # Performance thresholds
+  performance:
+    response_time_threshold: 2000  # 2 seconds
+    error_rate_threshold: 5        # 5%
+    uptime_threshold: 99.0         # 99%
+    
+  # Rollback configuration
+  rollback:
+    auto_rollback_on_failure: true
+    health_check_timeout: 300      # 5 minutes
+    
+# Required secrets (to be set in GitHub repository settings)
+required_secrets:
+  - STAGING_SUPABASE_URL
+  - STAGING_SUPABASE_ANON_KEY
+  - STAGING_API_URL
+  - VERCEL_TOKEN
+  - VERCEL_ORG_ID
+  - VERCEL_PROJECT_ID
+  - CLOUDFLARE_API_TOKEN

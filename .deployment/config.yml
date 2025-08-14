@@ -1,0 +1,287 @@
+# SwiftConcur Deployment Configuration
+# This file centralizes deployment settings across all environments
+
+version: "2.0"
+project:
+  name: "SwiftConcur"
+  repository: "GradualSystems-io/swiftconcur"
+  description: "Swift concurrency warning detection and CI/CD tool"
+
+# Global deployment settings
+global:
+  timeout: 600  # 10 minutes
+  retry_count: 3
+  health_check_interval: 30
+  cleanup_retention_days: 30
+  
+# Environment configurations
+environments:
+  development:
+    name: "development"
+    url: "https://dev.gradualsystems.io/SwiftConcur"
+    auto_deploy: false
+    require_approval: false
+    branch_patterns:
+      - "feature/*"
+      - "fix/*"
+    
+    thresholds:
+      response_time: 5000  # 5 seconds
+      error_rate: 10       # 10%
+      uptime: 95.0         # 95%
+    
+    resources:
+      cpu: "512m"
+      memory: "1Gi"
+      replicas: 1
+    
+    features:
+      - debug_logging
+      - performance_profiling
+      - experimental_features
+
+  staging:
+    name: "staging"
+    url: "https://staging.gradualsystems.io/SwiftConcur"
+    auto_deploy: true
+    require_approval: false
+    branch_patterns:
+      - "develop"
+    
+    thresholds:
+      response_time: 2000  # 2 seconds
+      error_rate: 5        # 5%
+      uptime: 99.0         # 99%
+    
+    resources:
+      cpu: "1"
+      memory: "2Gi"
+      replicas: 2
+    
+    features:
+      - performance_monitoring
+      - load_testing
+      - integration_testing
+    
+    deployment:
+      strategy: "rolling"
+      max_unavailable: "25%"
+      max_surge: "25%"
+
+  production:
+    name: "production"
+    url: "https://gradualsystems.io/SwiftConcur"
+    auto_deploy: false
+    require_approval: true
+    branch_patterns:
+      - "main"
+    
+    thresholds:
+      response_time: 1000  # 1 second
+      error_rate: 1        # 1%
+      uptime: 99.9         # 99.9%
+    
+    resources:
+      cpu: "2"
+      memory: "4Gi"
+      replicas: 3
+    
+    features:
+      - comprehensive_monitoring
+      - security_scanning
+      - backup_automation
+      - disaster_recovery
+    
+    deployment:
+      strategy: "blue_green"
+      traffic_split_duration: 300  # 5 minutes
+      monitoring_duration: 900     # 15 minutes
+      rollback_threshold: 5        # Auto-rollback if >5% error rate
+
+# Security configuration
+security:
+  scanning:
+    enabled: true
+    block_on_critical: true
+    block_on_secrets: true
+    
+  vulnerability_thresholds:
+    critical: 0
+    high: 5
+    medium: 20
+    low: -1  # No limit
+  
+  compliance:
+    required_checks:
+      - dependency_audit
+      - secrets_scan
+      - container_security
+      - static_analysis
+    
+    reports:
+      retention_days: 90
+      format: ["json", "sarif", "markdown"]
+
+# Performance monitoring
+monitoring:
+  enabled: true
+  
+  metrics:
+    - name: "response_time"
+      type: "histogram"
+      buckets: [50, 100, 200, 500, 1000, 2000, 5000]
+    
+    - name: "error_rate"
+      type: "counter"
+      labels: ["status_code", "endpoint"]
+    
+    - name: "throughput"
+      type: "counter"
+      labels: ["method", "endpoint"]
+    
+    - name: "resource_usage"
+      type: "gauge"
+      labels: ["resource_type", "component"]
+  
+  alerts:
+    - name: "high_error_rate"
+      condition: "error_rate > 5%"
+      duration: "2m"
+      severity: "critical"
+      
+    - name: "slow_response_time"
+      condition: "response_time_p95 > 2s"
+      duration: "5m"
+      severity: "warning"
+      
+    - name: "deployment_failure"
+      condition: "deployment_success == false"
+      duration: "1m"
+      severity: "critical"
+
+# Build configuration
+build:
+  rust:
+    version: "1.78"
+    features:
+      - "--release"
+      - "--locked"
+    targets:
+      - "x86_64-unknown-linux-gnu"
+      - "aarch64-apple-darwin"
+      - "x86_64-apple-darwin"
+      - "x86_64-pc-windows-msvc"
+  
+  nodejs:
+    version: "20"
+    package_manager: "npm"
+    build_command: "npm run build"
+    
+  docker:
+    base_image: "swift:5.10-slim"
+    multi_stage: true
+    security_scan: true
+    
+# Testing configuration
+testing:
+  unit_tests:
+    command: "cargo nextest run"
+    coverage_threshold: 80
+    
+  integration_tests:
+    command: "cargo test --test integration_tests"
+    timeout: 300
+    
+  e2e_tests:
+    staging_required: true
+    production_blocked: false
+    
+  performance_tests:
+    load_test_duration: 300  # 5 minutes
+    max_response_time: 2000
+    min_throughput: 100
+
+# Rollback configuration
+rollback:
+  automatic:
+    enabled: true
+    conditions:
+      - health_check_failures: 3
+      - error_rate_threshold: 10  # 10%
+      - response_time_threshold: 5000  # 5s
+    
+  manual:
+    require_reason: true
+    notify_stakeholders: true
+    create_incident: true
+    
+  validation:
+    health_checks: true
+    performance_tests: false
+    user_acceptance: false
+
+# Notification configuration
+notifications:
+  slack:
+    enabled: true
+    webhook_url: "${SLACK_WEBHOOK_URL}"
+    channels:
+      deployments: "#deployments"
+      alerts: "#alerts"
+      security: "#security"
+    
+  email:
+    enabled: true
+    smtp_server: "${SMTP_SERVER}"
+    recipients:
+      ops: "ops@gradualsystems.io"
+      dev: "dev-team@gradualsystems.io"
+      security: "security@gradualsystems.io"
+  
+  github:
+    enabled: true
+    status_checks: true
+    pr_comments: true
+    issue_creation: true
+
+# Backup and disaster recovery
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  retention: 30  # days
+  
+  components:
+    - database
+    - configuration
+    - static_assets
+    - deployment_artifacts
+    
+disaster_recovery:
+  rto: 240  # Recovery Time Objective: 4 hours
+  rpo: 60   # Recovery Point Objective: 1 hour
+  
+  procedures:
+    - automated_failover
+    - data_restoration
+    - service_verification
+    - stakeholder_notification
+
+# Cost optimization
+cost_optimization:
+  enabled: true
+  
+  auto_scaling:
+    min_replicas: 1
+    max_replicas: 10
+    cpu_threshold: 70
+    memory_threshold: 80
+  
+  resource_cleanup:
+    unused_images: 7  # days
+    old_deployments: 30  # days
+    temp_artifacts: 1  # days
+    
+  scheduling:
+    dev_environment:
+      shutdown_schedule: "0 22 * * 1-5"  # Weekdays 10 PM
+      startup_schedule: "0 8 * * 1-5"    # Weekdays 8 AM
