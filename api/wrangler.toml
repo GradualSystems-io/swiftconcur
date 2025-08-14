@@ -39,11 +39,17 @@ max_batch_size = 10
 max_batch_timeout = 30
 
 # Environment-specific settings
-[env.production]
-vars = { ENVIRONMENT = "production" }
-
 [env.development]
+name = "swiftconcur-api-dev"
 vars = { ENVIRONMENT = "development" }
+
+[env.staging]
+name = "swiftconcur-api-staging"  
+vars = { ENVIRONMENT = "staging" }
+
+[env.production]
+name = "swiftconcur-api"
+vars = { ENVIRONMENT = "production" }
 
 # Secrets (set via wrangler secret put)
 # SUPABASE_URL

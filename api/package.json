@@ -6,11 +6,15 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "build": "./scripts/build-worker.sh",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:smoke": "vitest run tests/smoke/",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write src/**/*.ts",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "validate": "wrangler validate",
+    "preview": "wrangler dev --remote"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

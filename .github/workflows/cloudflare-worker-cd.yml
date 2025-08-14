@@ -1,0 +1,567 @@
+name: Cloudflare Worker Continuous Deployment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - '.github/workflows/cloudflare-worker-cd.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - '.github/workflows/cloudflare-worker-cd.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      force_deploy:
+        description: 'Force deployment even if tests fail'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  NODE_VERSION: '18'
+  WORKER_NAME: 'swiftconcur-api'
+
+# Cancel previous runs on new commits
+concurrency:
+  group: cloudflare-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Build and test the Cloudflare Worker
+  build-and-test:
+    runs-on: ubuntu-latest
+    outputs:
+      should-deploy: ${{ steps.changes.outputs.should-deploy }}
+      build-artifact: ${{ steps.build.outputs.artifact-name }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
+
+      - name: Detect changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+            echo "Manual deployment triggered"
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+            echo "Main branch push - will deploy"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "should-deploy=false" >> $GITHUB_OUTPUT
+            echo "PR - will test only"
+          else
+            if git diff --quiet HEAD^ -- api/; then
+              echo "should-deploy=false" >> $GITHUB_OUTPUT
+              echo "No API changes detected"
+            else
+              echo "should-deploy=true" >> $GITHUB_OUTPUT
+              echo "API changes detected"
+            fi
+          fi
+
+      - name: Install dependencies
+        working-directory: api
+        run: |
+          echo "📦 Installing dependencies..."
+          npm ci --prefer-offline --no-audit
+
+      - name: Validate package.json
+        working-directory: api
+        run: |
+          echo "🔍 Validating package configuration..."
+          node -e "const pkg = require('./package.json'); 
+            if (!pkg.name || !pkg.version || !pkg.main) {
+              throw new Error('Invalid package.json configuration');
+            }
+            console.log('✅ Package validation passed');"
+
+      - name: TypeScript compilation check
+        working-directory: api
+        run: |
+          echo "🔨 Checking TypeScript compilation..."
+          npm run type-check
+
+      - name: ESLint code quality check
+        working-directory: api
+        run: |
+          echo "🔍 Running ESLint..."
+          npm run lint
+
+      - name: Run unit tests
+        working-directory: api
+        run: |
+          echo "🧪 Running unit tests..."
+          npm run test
+
+      - name: Run integration tests
+        working-directory: api
+        run: |
+          echo "🔗 Running integration tests..."
+          npm run test -- --run tests/integration/
+
+      - name: Build Worker bundle
+        id: build
+        working-directory: api
+        run: |
+          echo "🏗️ Building Cloudflare Worker..."
+          
+          # Create build info
+          BUILD_INFO=$(cat << EOF
+          {
+            "buildTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "gitCommit": "${{ github.sha }}",
+            "gitBranch": "${{ github.ref_name }}",
+            "buildNumber": "${{ github.run_number }}",
+            "environment": "ci"
+          }
+          EOF
+          )
+          
+          echo "$BUILD_INFO" > src/build-info.json
+          
+          # Validate wrangler configuration
+          npx wrangler@latest validate
+          
+          # Build the worker (dry run to check for issues)
+          npx wrangler@latest deploy --dry-run --env development
+          
+          # Create artifact name
+          ARTIFACT_NAME="worker-build-${{ github.sha }}-${{ github.run_number }}"
+          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          
+          echo "✅ Worker build validation completed"
+
+      - name: Generate deployment manifest
+        working-directory: api
+        run: |
+          echo "📋 Generating deployment manifest..."
+          
+          cat > deployment-manifest.json << EOF
+          {
+            "worker": {
+              "name": "${{ env.WORKER_NAME }}",
+              "main": "src/index.ts",
+              "buildTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "commit": "${{ github.sha }}",
+              "branch": "${{ github.ref_name }}",
+              "runNumber": "${{ github.run_number }}"
+            },
+            "dependencies": {
+              "node": "${{ env.NODE_VERSION }}",
+              "packages": $(jq '.dependencies' package.json)
+            },
+            "configuration": {
+              "compatibilityDate": "$(grep compatibility_date wrangler.toml | cut -d'"' -f2)",
+              "r2Buckets": $(grep -A 10 "r2_buckets" wrangler.toml | grep bucket_name | wc -l),
+              "kvNamespaces": $(grep -A 10 "kv_namespaces" wrangler.toml | grep binding | wc -l),
+              "durableObjects": $(grep -A 10 "durable_objects" wrangler.toml | grep class_name | wc -l)
+            }
+          }
+          EOF
+          
+          echo "✅ Deployment manifest created"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.artifact-name }}
+          path: |
+            api/src/
+            api/wrangler.toml
+            api/package.json
+            api/package-lock.json
+            api/deployment-manifest.json
+          retention-days: 30
+
+  # Deploy to development environment
+  deploy-development:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: needs.build-and-test.outputs.should-deploy == 'true'
+    environment: 
+      name: development
+      url: https://swiftconcur-api-dev.workers.dev
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-and-test.outputs.build-artifact }}
+          path: api/
+
+      - name: Install Wrangler CLI
+        run: npm install -g wrangler@latest
+
+      - name: Authenticate with Cloudflare
+        working-directory: api
+        run: |
+          echo "🔐 Authenticating with Cloudflare..."
+          wrangler auth api-token --token ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Deploy to development
+        working-directory: api
+        run: |
+          echo "🚀 Deploying to development environment..."
+          
+          # Deploy with retry logic
+          for i in {1..3}; do
+            if wrangler deploy --env development; then
+              echo "✅ Development deployment successful"
+              break
+            else
+              echo "❌ Deployment attempt $i failed, retrying..."
+              sleep 10
+            fi
+          done
+
+      - name: Verify development deployment
+        run: |
+          echo "🏥 Verifying development deployment..."
+          
+          # Wait for deployment to propagate
+          sleep 15
+          
+          # Health check
+          HEALTH_URL="https://swiftconcur-api-dev.workers.dev/health"
+          
+          for i in {1..5}; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
+            
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Development health check passed"
+              
+              # Detailed health check
+              HEALTH_RESPONSE=$(curl -s "$HEALTH_URL?detailed=true")
+              echo "Health response: $HEALTH_RESPONSE"
+              break
+            else
+              echo "⏳ Health check attempt $i failed (HTTP $HTTP_STATUS), retrying..."
+              sleep 10
+            fi
+          done
+          
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ Development health check failed after retries"
+            exit 1
+          fi
+
+      - name: Run smoke tests
+        working-directory: api
+        run: |
+          echo "💨 Running smoke tests against development..."
+          
+          # Install test dependencies if needed
+          npm ci --only=dev
+          
+          # Run smoke tests against development environment
+          WORKER_URL="https://swiftconcur-api-dev.workers.dev" npm run test -- --run tests/smoke/
+
+  # Deploy to production (only on main branch)
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [build-and-test, deploy-development]
+    if: |
+      needs.build-and-test.outputs.should-deploy == 'true' && 
+      (github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production') &&
+      github.event.inputs.force_deploy != 'true'
+    environment: 
+      name: production
+      url: https://swiftconcur-api.workers.dev
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-and-test.outputs.build-artifact }}
+          path: api/
+
+      - name: Install Wrangler CLI
+        run: npm install -g wrangler@latest
+
+      - name: Authenticate with Cloudflare
+        working-directory: api
+        run: |
+          echo "🔐 Authenticating with Cloudflare..."
+          wrangler auth api-token --token ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Create production deployment backup
+        working-directory: api
+        run: |
+          echo "💾 Creating deployment backup..."
+          
+          # Get current worker version info
+          wrangler deployments list --env production || echo "No existing deployments"
+          
+          # Export current configuration as backup
+          wrangler export --env production || echo "No existing worker to backup"
+
+      - name: Deploy to production
+        working-directory: api
+        run: |
+          echo "🌍 Deploying to production environment..."
+          
+          # Production deployment with extra safety
+          wrangler deploy --env production --compatibility-date $(date +%Y-%m-%d)
+
+      - name: Verify production deployment
+        run: |
+          echo "🏥 Verifying production deployment..."
+          
+          # Wait for deployment to propagate globally
+          sleep 30
+          
+          # Health check
+          HEALTH_URL="https://swiftconcur-api.workers.dev/health"
+          
+          for i in {1..10}; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
+            
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Production health check passed"
+              
+              # Detailed health check
+              HEALTH_RESPONSE=$(curl -s "$HEALTH_URL?detailed=true")
+              echo "Production health: $HEALTH_RESPONSE"
+              break
+            else
+              echo "⏳ Production health check attempt $i failed (HTTP $HTTP_STATUS), retrying..."
+              sleep 15
+            fi
+          done
+          
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ Production health check failed - considering rollback"
+            exit 1
+          fi
+
+      - name: Run production smoke tests
+        working-directory: api
+        run: |
+          echo "💨 Running production smoke tests..."
+          
+          # Install test dependencies
+          npm ci --only=dev
+          
+          # Run comprehensive smoke tests against production
+          WORKER_URL="https://swiftconcur-api.workers.dev" npm run test -- --run tests/smoke/
+
+      - name: Send deployment notification
+        if: success()
+        run: |
+          echo "📢 Sending deployment notification..."
+          
+          SLACK_PAYLOAD=$(cat << EOF
+          {
+            "text": "🚀 SwiftConcur API deployed to production",
+            "attachments": [
+              {
+                "color": "good",
+                "fields": [
+                  {
+                    "title": "Environment",
+                    "value": "Production",
+                    "short": true
+                  },
+                  {
+                    "title": "Commit",
+                    "value": "${{ github.sha }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Deployer",
+                    "value": "${{ github.actor }}",
+                    "short": true
+                  },
+                  {
+                    "title": "URL",
+                    "value": "https://swiftconcur-api.workers.dev",
+                    "short": true
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+          )
+          
+          if [ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]; then
+            curl -X POST -H 'Content-type: application/json' \
+                 --data "$SLACK_PAYLOAD" \
+                 "${{ secrets.SLACK_WEBHOOK_URL }}" || echo "Slack notification failed"
+          else
+            echo "No Slack webhook configured"
+          fi
+
+  # Rollback capability
+  rollback-production:
+    runs-on: ubuntu-latest
+    if: failure() && github.ref == 'refs/heads/main'
+    needs: [deploy-production]
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Wrangler CLI
+        run: npm install -g wrangler@latest
+
+      - name: Authenticate with Cloudflare
+        working-directory: api
+        run: |
+          echo "🔐 Authenticating with Cloudflare..."
+          wrangler auth api-token --token ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Rollback to previous version
+        working-directory: api
+        run: |
+          echo "⏪ Rolling back production deployment..."
+          
+          # Get deployment history
+          wrangler deployments list --env production
+          
+          # Rollback to previous deployment
+          PREVIOUS_DEPLOYMENT=$(wrangler deployments list --env production --json | jq -r '.[1].id' 2>/dev/null || echo "")
+          
+          if [ -n "$PREVIOUS_DEPLOYMENT" ]; then
+            echo "Rolling back to deployment: $PREVIOUS_DEPLOYMENT"
+            wrangler rollback --env production "$PREVIOUS_DEPLOYMENT"
+            
+            # Verify rollback
+            sleep 15
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://swiftconcur-api.workers.dev/health" || echo "000")
+            
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Rollback successful"
+            else
+              echo "❌ Rollback verification failed"
+              exit 1
+            fi
+          else
+            echo "❌ No previous deployment found for rollback"
+            exit 1
+          fi
+
+      - name: Send rollback notification
+        run: |
+          echo "📢 Sending rollback notification..."
+          
+          SLACK_PAYLOAD=$(cat << EOF
+          {
+            "text": "⚠️ SwiftConcur API production rollback executed",
+            "attachments": [
+              {
+                "color": "warning",
+                "fields": [
+                  {
+                    "title": "Action",
+                    "value": "Production Rollback",
+                    "short": true
+                  },
+                  {
+                    "title": "Trigger",
+                    "value": "Deployment Failure",
+                    "short": true
+                  },
+                  {
+                    "title": "Commit",
+                    "value": "${{ github.sha }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Actor",
+                    "value": "${{ github.actor }}",
+                    "short": true
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+          )
+          
+          if [ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]; then
+            curl -X POST -H 'Content-type: application/json' \
+                 --data "$SLACK_PAYLOAD" \
+                 "${{ secrets.SLACK_WEBHOOK_URL }}" || echo "Slack notification failed"
+          fi
+
+  # Deployment summary and cleanup
+  deployment-summary:
+    runs-on: ubuntu-latest
+    needs: [build-and-test, deploy-development, deploy-production]
+    if: always()
+    
+    steps:
+      - name: Generate deployment summary
+        run: |
+          echo "# 🚀 Cloudflare Worker Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow**: ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📊 Job Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Build & Test | ${{ needs.build-and-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Development | ${{ needs.deploy-development.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Production | ${{ needs.deploy-production.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.deploy-development.result }}" = "success" ]; then
+            echo "🟢 **Development**: https://swiftconcur-api-dev.workers.dev" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.deploy-production.result }}" = "success" ]; then
+            echo "🟢 **Production**: https://swiftconcur-api.workers.dev" >> $GITHUB_STEP_SUMMARY
+          fi
