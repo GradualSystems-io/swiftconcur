@@ -40,3 +40,4 @@ instructions/.DS_Store
 dashboard/.env.local
 instructions/.DS_Store
 /dashboard/coverage
+/api/coverage
