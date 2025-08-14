@@ -1,3 +1,4 @@
+/** @jest-environment node */
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/stripe/webhook/route';
@@ -300,3 +301,4 @@ describe('Stripe Webhook Handler', () => {
     );
   });
 });
+/** @jest-environment node */

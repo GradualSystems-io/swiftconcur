@@ -25,18 +25,35 @@ const TestProviders = ({ children }: { children: React.ReactNode }) => {
 
 // Mock the security context
 jest.mock('@/app/providers', () => ({
-  useSecurity: () => ({
+  useSecurity: jest.fn(() => ({
     reportSecurityEvent: jest.fn(),
     rateLimit: {
       isAllowed: jest.fn(() => true),
     },
-  }),
+  })),
 }))
 
 // Mock the realtime hook
 jest.mock('@/lib/hooks/useRealtime', () => ({
   useRealtime: jest.fn(),
 }))
+
+// Mock Supabase client with chainable query methods that tests can control
+jest.mock('@/lib/supabase/client', () => {
+  const orderFn = jest.fn();
+  // Allow tests to do: ...order().mockResolvedValue(...)
+  orderFn.mockReturnValue(orderFn);
+  const chain = {
+    select: jest.fn(() => chain),
+    gte: jest.fn(() => chain),
+    order: orderFn,
+  } as any;
+  return {
+    createClient: jest.fn(() => ({
+      from: jest.fn(() => chain),
+    })),
+  };
+});
 
 // Mock recharts to avoid canvas issues in tests
 jest.mock('recharts', () => ({

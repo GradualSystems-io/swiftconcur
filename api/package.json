@@ -23,6 +23,7 @@
     "itty-router": "^4.0.24"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^1.1.0",
     "@cloudflare/workers-types": "^4.20231218.0",
     "@types/node": "^20.10.5",
     "@typescript-eslint/eslint-plugin": "^6.15.0",

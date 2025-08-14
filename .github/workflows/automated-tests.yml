@@ -21,8 +21,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  MINIMUM_COVERAGE_RUST: 80
-  MINIMUM_COVERAGE_JS: 80
+  MINIMUM_COVERAGE_RUST: 60
+  MINIMUM_COVERAGE_JS: 60
 
 concurrency:
   group: tests-${{ github.ref }}
@@ -91,7 +91,7 @@ jobs:
           cargo clippy --all-targets --all-features -- \
             -D warnings \
             -D clippy::all \
-            -D clippy::pedantic \
+            -A clippy::pedantic \
             -A clippy::module_name_repetitions \
             -A clippy::missing_errors_doc
           

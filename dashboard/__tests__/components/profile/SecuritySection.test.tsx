@@ -43,7 +43,7 @@ describe('SecuritySection', () => {
     render(<SecuritySection user={mockUser} hasPassword={true} oauthProviders={['email']} />);
     
     expect(screen.getByText('Email Verification')).toBeInTheDocument();
-    expect(screen.getByText('Verified')).toBeInTheDocument();
+    expect(screen.getAllByText('Verified').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Password')).toBeInTheDocument();
     expect(screen.getByText('Set')).toBeInTheDocument();
   });
@@ -76,10 +76,10 @@ describe('SecuritySection', () => {
     fireEvent.change(screen.getByLabelText(/current password/i), {
       target: { value: 'currentpass' }
     });
-    fireEvent.change(screen.getByLabelText(/new password/i), {
+    fireEvent.change(screen.getByLabelText(/^New Password$/i), {
       target: { value: 'newpassword123' }
     });
-    fireEvent.change(screen.getByLabelText(/confirm new password/i), {
+    fireEvent.change(screen.getByLabelText(/^Confirm New Password$/i), {
       target: { value: 'newpassword123' }
     });
     
@@ -102,10 +102,13 @@ describe('SecuritySection', () => {
     fireEvent.click(screen.getByText('Change Password'));
     
     // Try with short password
-    fireEvent.change(screen.getByLabelText(/new password/i), {
+    fireEvent.change(screen.getByLabelText(/current password/i), {
+      target: { value: 'currentpass' }
+    });
+    fireEvent.change(screen.getByLabelText(/^New Password$/i), {
       target: { value: 'short' }
     });
-    fireEvent.change(screen.getByLabelText(/confirm new password/i), {
+    fireEvent.change(screen.getByLabelText(/^Confirm New Password$/i), {
       target: { value: 'short' }
     });
     
@@ -123,10 +126,13 @@ describe('SecuritySection', () => {
     fireEvent.click(screen.getByText('Change Password'));
     
     // Use mismatched passwords
-    fireEvent.change(screen.getByLabelText(/new password/i), {
+    fireEvent.change(screen.getByLabelText(/current password/i), {
+      target: { value: 'currentpass' }
+    });
+    fireEvent.change(screen.getByLabelText(/^New Password$/i), {
       target: { value: 'newpassword123' }
     });
-    fireEvent.change(screen.getByLabelText(/confirm new password/i), {
+    fireEvent.change(screen.getByLabelText(/^Confirm New Password$/i), {
       target: { value: 'different123' }
     });
     

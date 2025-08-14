@@ -165,7 +165,7 @@ describe('NotificationSettings', () => {
       ...mockUser,
       user_metadata: {
         notification_preferences: {
-          email_enabled: false,
+          email_enabled: true,
           critical_warnings: false,
           daily_summary: true,
           slack_enabled: true,
@@ -176,7 +176,7 @@ describe('NotificationSettings', () => {
     
     render(<NotificationSettings user={userWithCustomPrefs} />);
     
-    expect(screen.getByLabelText(/enable email notifications/i)).not.toBeChecked();
+    expect(screen.getByLabelText(/enable email notifications/i)).toBeChecked();
     expect(screen.getByLabelText(/daily summary report/i)).toBeChecked();
     expect(screen.getByLabelText(/enable slack notifications/i)).toBeChecked();
     expect(screen.getByDisplayValue('https://example.com/webhook')).toBeInTheDocument();

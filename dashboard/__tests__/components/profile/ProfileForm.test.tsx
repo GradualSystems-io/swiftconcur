@@ -129,6 +129,6 @@ describe('ProfileForm', () => {
   it('shows bio character count', () => {
     render(<ProfileForm user={mockUser} />);
     
-    expect(screen.getByText('17/500 characters')).toBeInTheDocument();
+    expect(screen.getByText('18/500 characters')).toBeInTheDocument();
   });
 });

@@ -302,3 +302,4 @@ describe('Stripe Checkout API', () => {
     );
   });
 });
+/** @jest-environment node */

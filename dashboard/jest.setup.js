@@ -81,6 +81,11 @@ Object.defineProperty(global, 'crypto', {
 // Mock fetch for tests
 global.fetch = jest.fn()
 
+// Provide a realistic Supabase anon key to satisfy validation in tests
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' + 'payload.'.padEnd(120, 'x');
+
 // Mock localStorage
 const localStorageMock = {
   getItem: jest.fn(),

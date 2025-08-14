@@ -13,13 +13,13 @@ export function isValidUUID(uuid: string): boolean {
 
 export function isValidEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email) && email.length <= 320; // RFC 5321 limit
+  // Enforce conservative total length limit per RFC guidance (~254 chars total)
+  return emailRegex.test(email) && email.length <= 254;
 }
 
 export function sanitizeFileName(fileName: string): string {
   return fileName
     .replace(/[^a-zA-Z0-9.-]/g, '_')
-    .replace(/_{2,}/g, '_')
     .slice(0, 255); // Filesystem limit
 }
 
