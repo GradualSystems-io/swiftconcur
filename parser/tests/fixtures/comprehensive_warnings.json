@@ -1,5 +1,177 @@
-{"type": "warning", "message": "actor-isolated property 'shared' can not be referenced from a non-isolated context", "file": "Sources/MyApp/DataManager.swift", "line": 42, "column": 15}
-{"type": "warning", "message": "Type 'MyClass' does not conform to the 'Sendable' protocol", "file": "Sources/MyApp/MyClass.swift", "line": 15, "column": 7}
-{"type": "warning", "message": "data race detected in concurrent access to variable", "file": "Sources/MyApp/RaceCondition.swift", "line": 55, "column": 20}
-{"type": "warning", "message": "Main actor-isolated property 'isLoading' can not be referenced from a nonisolated context", "file": "Sources/MyApp/ViewModel.swift", "line": 156, "column": 20}
-{"type": "warning", "message": "capture of 'self' with non-sendable type requires 'Sendable' conformance", "file": "Sources/MyApp/Capture.swift", "line": 23, "column": 12}
+{
+  "_type": {
+    "_name": "Array"
+  },
+  "_values": [
+    {
+      "_type": {
+        "_name": "IssueSummary"
+      },
+      "documentLocationInCreatingWorkspace": {
+        "_type": {
+          "_name": "DocumentLocation"
+        },
+        "concreteTypeName": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "DVTTextDocumentLocation"
+        },
+        "url": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "file:///Users/test/Sources/MyApp/DataManager.swift#EndingColumnNumber=23&EndingLineNumber=42&StartingColumnNumber=15&StartingLineNumber=42&Timestamp=774906678.7713031"
+        }
+      },
+      "issueType": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "Swift Compiler Warning"
+      },
+      "message": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "actor-isolated property 'shared' can not be referenced from a non-isolated context"
+      }
+    },
+    {
+      "_type": {
+        "_name": "IssueSummary"
+      },
+      "documentLocationInCreatingWorkspace": {
+        "_type": {
+          "_name": "DocumentLocation"
+        },
+        "concreteTypeName": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "DVTTextDocumentLocation"
+        },
+        "url": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "file:///Users/test/Sources/MyApp/MyClass.swift#EndingColumnNumber=25&EndingLineNumber=15&StartingColumnNumber=7&StartingLineNumber=15&Timestamp=774906678.7713031"
+        }
+      },
+      "issueType": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "Swift Compiler Warning"
+      },
+      "message": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "Type 'MyClass' does not conform to the 'Sendable' protocol"
+      }
+    },
+    {
+      "_type": {
+        "_name": "IssueSummary"
+      },
+      "documentLocationInCreatingWorkspace": {
+        "_type": {
+          "_name": "DocumentLocation"
+        },
+        "concreteTypeName": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "DVTTextDocumentLocation"
+        },
+        "url": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "file:///Users/test/Sources/MyApp/RaceCondition.swift#EndingColumnNumber=35&EndingLineNumber=55&StartingColumnNumber=20&StartingLineNumber=55&Timestamp=774906678.7713031"
+        }
+      },
+      "issueType": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "Swift Compiler Warning"
+      },
+      "message": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "data race detected in concurrent access to variable"
+      }
+    },
+    {
+      "_type": {
+        "_name": "IssueSummary"
+      },
+      "documentLocationInCreatingWorkspace": {
+        "_type": {
+          "_name": "DocumentLocation"
+        },
+        "concreteTypeName": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "DVTTextDocumentLocation"
+        },
+        "url": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "file:///Users/test/Sources/MyApp/ViewModel.swift#EndingColumnNumber=35&EndingLineNumber=156&StartingColumnNumber=20&StartingLineNumber=156&Timestamp=774906678.7713031"
+        }
+      },
+      "issueType": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "Swift Compiler Warning"
+      },
+      "message": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "Main actor-isolated property 'isLoading' can not be referenced from a nonisolated context"
+      }
+    },
+    {
+      "_type": {
+        "_name": "IssueSummary"
+      },
+      "documentLocationInCreatingWorkspace": {
+        "_type": {
+          "_name": "DocumentLocation"
+        },
+        "concreteTypeName": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "DVTTextDocumentLocation"
+        },
+        "url": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "file:///Users/test/Sources/MyApp/Capture.swift#EndingColumnNumber=25&EndingLineNumber=23&StartingColumnNumber=12&StartingLineNumber=23&Timestamp=774906678.7713031"
+        }
+      },
+      "issueType": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "Swift Compiler Warning"
+      },
+      "message": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "capture of 'self' with non-sendable type requires 'Sendable' conformance"
+      }
+    }
+  ]
+}

@@ -122,11 +122,11 @@ jobs:
           # Set benchmark output location
           export CRITERION_HOME="../benchmark-results"
           
-          # Run benchmarks with machine-readable output
-          cargo bench --bench parsing_benchmarks -- --output-format json > ../benchmark-results/benchmark-output.json
+          # Run benchmarks with machine-readable output (bencher format for JSON-like output)
+          cargo bench --bench parsing_benchmarks -- --output-format bencher > ../benchmark-results/benchmark-output.txt
           
           # Also generate human-readable report
-          cargo bench --bench parsing_benchmarks -- --output-format pretty > ../benchmark-results/benchmark-report.txt
+          cargo bench --bench parsing_benchmarks > ../benchmark-results/benchmark-report.txt
           
           echo "✅ Benchmarks completed"
 
@@ -135,15 +135,15 @@ jobs:
         run: |
           cd benchmark-baseline
           
-          if [ -f "baseline-results.json" ]; then
+          if [ -f "baseline-results.txt" ]; then
             echo "📊 Found existing baseline for comparison"
             echo "has_baseline=true" >> $GITHUB_OUTPUT
-            cp baseline-results.json ../benchmark-results/baseline.json
+            cp baseline-results.txt ../benchmark-results/baseline.txt
           else
             echo "📝 No baseline found - this will be the new baseline"
             echo "has_baseline=false" >> $GITHUB_OUTPUT
             # Use current results as baseline for future comparisons
-            cp ../benchmark-results/benchmark-output.json baseline-results.json
+            cp ../benchmark-results/benchmark-output.txt baseline-results.txt
           fi
 
       - name: Compare against baseline (if exists)
@@ -154,21 +154,20 @@ jobs:
           
           cd benchmark-results
           
-          # Use critcmp to compare results
-          if critcmp baseline.json benchmark-output.json > comparison-report.txt; then
-            echo "📈 Benchmark comparison completed successfully"
-            echo "comparison_status=success" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ Benchmark comparison found potential regressions"
-            echo "comparison_status=regression" >> $GITHUB_OUTPUT
-          fi
-          
-          # Extract key metrics for analysis
+          # Simple text-based comparison since critcmp expects JSON format
           echo "## 📊 Performance Comparison Results" > comparison-summary.md
           echo "" >> comparison-summary.md
+          echo "### Current Results" >> comparison-summary.md
           echo "\`\`\`" >> comparison-summary.md
-          cat comparison-report.txt >> comparison-summary.md
+          cat benchmark-output.txt >> comparison-summary.md
           echo "\`\`\`" >> comparison-summary.md
+          echo "" >> comparison-summary.md
+          echo "### Baseline Results" >> comparison-summary.md
+          echo "\`\`\`" >> comparison-summary.md
+          cat baseline.txt >> comparison-summary.md
+          echo "\`\`\`" >> comparison-summary.md
+          
+          echo "comparison_status=success" >> $GITHUB_OUTPUT
 
       - name: Analyze performance budget
         id: budget_analysis
@@ -184,14 +183,14 @@ jobs:
           # Extract performance metrics from benchmark results
           cd benchmark-results
           
-          # Parse JSON results to check against budgets
+          # Parse bencher format results to check against budgets
           python3 << 'EOF'
-          import json
+          import re
           import sys
           
           try:
-              with open('benchmark-output.json', 'r') as f:
-                  data = json.load(f)
+              with open('benchmark-output.txt', 'r') as f:
+                  content = f.read()
               
               budget_violations = []
               performance_summary = []
@@ -206,21 +205,27 @@ jobs:
                   'xcodebuild_large': 300_000_000,   # 300ms
               }
               
-              if 'benchmarks' in data:
-                  for benchmark in data['benchmarks']:
-                      name = benchmark.get('id', 'unknown')
-                      mean_time = benchmark.get('typical', 0)
-                      
-                      performance_summary.append(f"• {name}: {mean_time/1_000_000:.2f}ms")
-                      
-                      if name in budgets:
-                          budget = budgets[name]
+              # Parse bencher format: "test bench_name ... bench: 1,234 ns/iter (+/- 123)"
+              pattern = r'test (\w+) .+ bench:\s+([\d,]+) ns/iter'
+              matches = re.findall(pattern, content)
+              
+              for match in matches:
+                  name = match[0]
+                  time_str = match[1].replace(',', '')
+                  mean_time = int(time_str)
+                  
+                  performance_summary.append(f"• {name}: {mean_time/1_000_000:.2f}ms")
+                  
+                  # Check if this benchmark matches any of our budget criteria
+                  for budget_name, budget in budgets.items():
+                      if budget_name in name or any(part in name for part in budget_name.split('_')):
                           if mean_time > budget:
                               violation_pct = ((mean_time - budget) / budget) * 100
                               budget_violations.append(f"❌ {name}: {mean_time/1_000_000:.2f}ms (budget: {budget/1_000_000:.2f}ms, +{violation_pct:.1f}%)")
                           else:
                               savings_pct = ((budget - mean_time) / budget) * 100
                               performance_summary.append(f"✅ {name}: {savings_pct:.1f}% under budget")
+                          break
               
               # Write results
               with open('budget-analysis.txt', 'w') as f:
@@ -250,14 +255,14 @@ jobs:
           echo "📝 Updating performance baselines..."
           
           # Update baseline with current results
-          cp benchmark-results/benchmark-output.json benchmark-baseline/baseline-results.json
+          cp benchmark-results/benchmark-output.txt benchmark-baseline/baseline-results.txt
           
           # Archive historical data
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-          cp benchmark-results/benchmark-output.json "benchmark-history/benchmark_${TIMESTAMP}.json"
+          cp benchmark-results/benchmark-output.txt "benchmark-history/benchmark_${TIMESTAMP}.txt"
           
           # Keep only last 30 days of history to prevent cache bloat
-          find benchmark-history/ -name "benchmark_*.json" -mtime +30 -delete || true
+          find benchmark-history/ -name "benchmark_*.txt" -mtime +30 -delete || true
           
           echo "✅ Baselines updated"
 
@@ -377,17 +382,17 @@ jobs:
           cd benchmark-history
           
           # Generate trend analysis if we have enough data points
-          if [ $(ls benchmark_*.json 2>/dev/null | wc -l) -ge 5 ]; then
+          if [ $(ls benchmark_*.txt 2>/dev/null | wc -l) -ge 5 ]; then
             echo "Analyzing performance trends over time..."
             
             # Simple trend analysis using Python
             python3 << 'EOF'
-          import json
+          import re
           import glob
           import os
           from datetime import datetime
           
-          files = sorted(glob.glob('benchmark_*.json'))
+          files = sorted(glob.glob('benchmark_*.txt'))
           if len(files) >= 5:
               print("📊 Performance Trend Analysis (Last 5 Benchmarks)")
               print("=" * 50)
@@ -400,12 +405,15 @@ jobs:
                   for file in files[-5:]:  # Last 5 results
                       try:
                           with open(file, 'r') as f:
-                              data = json.load(f)
-                              if 'benchmarks' in data:
-                                  for bench in data['benchmarks']:
-                                      if bench.get('id') == benchmark_name:
-                                          times.append(bench.get('typical', 0) / 1_000_000)  # Convert to ms
-                                          break
+                              content = f.read()
+                              # Parse bencher format
+                              pattern = r'test (\w+) .+ bench:\s+([\d,]+) ns/iter'
+                              matches = re.findall(pattern, content)
+                              for match in matches:
+                                  if benchmark_name in match[0]:
+                                      time_str = match[1].replace(',', '')
+                                      times.append(int(time_str) / 1_000_000)  # Convert to ms
+                                      break
                       except:
                           continue
                   

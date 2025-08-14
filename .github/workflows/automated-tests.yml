@@ -17,6 +17,7 @@ on:
       - 'api/**'
       - 'cli/**'
       - '.github/workflows/automated-tests.yml'
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
