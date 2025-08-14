@@ -1,0 +1,436 @@
+name: Performance Budget & Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run weekly performance baseline updates
+    - cron: '0 2 * * 1'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Cache versioning for forced updates
+  CACHE_VERSION: v1
+  # Performance optimizations for benchmarks
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+
+# Cancel previous runs on new commits
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need history for baseline comparison
+          fetch-depth: 0
+      
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      # Restore caches for faster benchmark execution
+      - name: Cache Rust registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+          key: ${{ env.CACHE_VERSION }}-${{ runner.os }}-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-registry-
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            target/
+            parser/target/
+          key: ${{ env.CACHE_VERSION }}-${{ runner.os }}-target-bench-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-target-bench-
+
+      # Cache benchmark baseline data
+      - name: Cache benchmark baseline
+        uses: actions/cache@v4
+        with:
+          path: |
+            benchmark-baseline/
+            benchmark-history/
+          key: ${{ env.CACHE_VERSION }}-benchmark-baseline-${{ github.repository }}-${{ github.ref_name }}
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-benchmark-baseline-${{ github.repository }}-
+
+      - name: Install benchmark tools
+        run: |
+          # Install critcmp for benchmark comparison
+          if ! command -v critcmp &> /dev/null; then
+            echo "Installing critcmp..."
+            cargo install critcmp --locked
+          else
+            echo "✅ critcmp already available"
+          fi
+
+      - name: Setup benchmark environment
+        run: |
+          mkdir -p benchmark-baseline
+          mkdir -p benchmark-history
+          mkdir -p benchmark-results
+          
+          # Set CPU governor to performance for consistent results
+          echo "Current CPU governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo 'N/A')"
+          
+          # Create benchmark configuration
+          cat > criterion_config.toml << 'EOF'
+          [measurement]
+          warm_up_time = "3s"
+          measurement_time = "10s"
+          confidence_level = 0.95
+          significance_level = 0.05
+          noise_threshold = 0.01
+          
+          [output]
+          verbose = true
+          EOF
+
+      - name: Build release binary for benchmarks
+        run: |
+          cd parser
+          echo "🔨 Building release version for accurate benchmarks..."
+          cargo build --release --all-features
+
+      - name: Run performance benchmarks
+        run: |
+          cd parser
+          echo "🚀 Running comprehensive performance benchmarks..."
+          
+          # Set benchmark output location
+          export CRITERION_HOME="../benchmark-results"
+          
+          # Run benchmarks with machine-readable output
+          cargo bench --bench parsing_benchmarks -- --output-format json > ../benchmark-results/benchmark-output.json
+          
+          # Also generate human-readable report
+          cargo bench --bench parsing_benchmarks -- --output-format pretty > ../benchmark-results/benchmark-report.txt
+          
+          echo "✅ Benchmarks completed"
+
+      - name: Load baseline benchmarks
+        id: baseline
+        run: |
+          cd benchmark-baseline
+          
+          if [ -f "baseline-results.json" ]; then
+            echo "📊 Found existing baseline for comparison"
+            echo "has_baseline=true" >> $GITHUB_OUTPUT
+            cp baseline-results.json ../benchmark-results/baseline.json
+          else
+            echo "📝 No baseline found - this will be the new baseline"
+            echo "has_baseline=false" >> $GITHUB_OUTPUT
+            # Use current results as baseline for future comparisons
+            cp ../benchmark-results/benchmark-output.json baseline-results.json
+          fi
+
+      - name: Compare against baseline (if exists)
+        if: steps.baseline.outputs.has_baseline == 'true'
+        id: comparison
+        run: |
+          echo "🔍 Comparing benchmark results against baseline..."
+          
+          cd benchmark-results
+          
+          # Use critcmp to compare results
+          if critcmp baseline.json benchmark-output.json > comparison-report.txt; then
+            echo "📈 Benchmark comparison completed successfully"
+            echo "comparison_status=success" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Benchmark comparison found potential regressions"
+            echo "comparison_status=regression" >> $GITHUB_OUTPUT
+          fi
+          
+          # Extract key metrics for analysis
+          echo "## 📊 Performance Comparison Results" > comparison-summary.md
+          echo "" >> comparison-summary.md
+          echo "\`\`\`" >> comparison-summary.md
+          cat comparison-report.txt >> comparison-summary.md
+          echo "\`\`\`" >> comparison-summary.md
+
+      - name: Analyze performance budget
+        id: budget_analysis
+        run: |
+          echo "💰 Analyzing performance budget compliance..."
+          
+          # Define performance budget thresholds (in milliseconds)
+          SMALL_FILE_BUDGET=10      # 10ms for small files
+          MEDIUM_FILE_BUDGET=50     # 50ms for medium files  
+          LARGE_FILE_BUDGET=200     # 200ms for large files
+          MEMORY_BUDGET=100         # 100MB memory usage
+          
+          # Extract performance metrics from benchmark results
+          cd benchmark-results
+          
+          # Parse JSON results to check against budgets
+          python3 << 'EOF'
+          import json
+          import sys
+          
+          try:
+              with open('benchmark-output.json', 'r') as f:
+                  data = json.load(f)
+              
+              budget_violations = []
+              performance_summary = []
+              
+              # Performance budget limits (in nanoseconds)
+              budgets = {
+                  'xcresult_small': 10_000_000,      # 10ms
+                  'xcresult_medium': 50_000_000,     # 50ms
+                  'xcresult_large': 200_000_000,     # 200ms
+                  'xcodebuild_small': 15_000_000,    # 15ms
+                  'xcodebuild_medium': 75_000_000,   # 75ms
+                  'xcodebuild_large': 300_000_000,   # 300ms
+              }
+              
+              if 'benchmarks' in data:
+                  for benchmark in data['benchmarks']:
+                      name = benchmark.get('id', 'unknown')
+                      mean_time = benchmark.get('typical', 0)
+                      
+                      performance_summary.append(f"• {name}: {mean_time/1_000_000:.2f}ms")
+                      
+                      if name in budgets:
+                          budget = budgets[name]
+                          if mean_time > budget:
+                              violation_pct = ((mean_time - budget) / budget) * 100
+                              budget_violations.append(f"❌ {name}: {mean_time/1_000_000:.2f}ms (budget: {budget/1_000_000:.2f}ms, +{violation_pct:.1f}%)")
+                          else:
+                              savings_pct = ((budget - mean_time) / budget) * 100
+                              performance_summary.append(f"✅ {name}: {savings_pct:.1f}% under budget")
+              
+              # Write results
+              with open('budget-analysis.txt', 'w') as f:
+                  f.write("# Performance Budget Analysis\n\n")
+                  f.write("## Performance Summary\n")
+                  for item in performance_summary:
+                      f.write(f"{item}\n")
+                  f.write("\n")
+                  
+                  if budget_violations:
+                      f.write("## Budget Violations\n")
+                      for violation in budget_violations:
+                          f.write(f"{violation}\n")
+                      print("budget_violations=true")
+                  else:
+                      f.write("## ✅ All performance budgets met!\n")
+                      print("budget_violations=false")
+                      
+          except Exception as e:
+              print(f"Error analyzing budget: {e}")
+              print("budget_violations=unknown")
+          EOF
+
+      - name: Update performance baselines (main branch only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "📝 Updating performance baselines..."
+          
+          # Update baseline with current results
+          cp benchmark-results/benchmark-output.json benchmark-baseline/baseline-results.json
+          
+          # Archive historical data
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          cp benchmark-results/benchmark-output.json "benchmark-history/benchmark_${TIMESTAMP}.json"
+          
+          # Keep only last 30 days of history to prevent cache bloat
+          find benchmark-history/ -name "benchmark_*.json" -mtime +30 -delete || true
+          
+          echo "✅ Baselines updated"
+
+      - name: Generate performance report
+        run: |
+          echo "📋 Generating comprehensive performance report..."
+          
+          cat > benchmark-results/performance-report.md << 'EOF'
+          # 🚀 SwiftConcur Performance Report
+          
+          **Generated**: $(date)
+          **Commit**: ${{ github.sha }}
+          **Branch**: ${{ github.ref_name }}
+          **Event**: ${{ github.event_name }}
+          
+          ## 📊 Benchmark Results
+          
+          EOF
+          
+          # Add benchmark summary
+          if [ -f "benchmark-results/budget-analysis.txt" ]; then
+            cat benchmark-results/budget-analysis.txt >> benchmark-results/performance-report.md
+          fi
+          
+          echo "" >> benchmark-results/performance-report.md
+          echo "## 🔍 Detailed Results" >> benchmark-results/performance-report.md
+          echo "" >> benchmark-results/performance-report.md
+          echo "\`\`\`" >> benchmark-results/performance-report.md
+          cat benchmark-results/benchmark-report.txt >> benchmark-results/performance-report.md
+          echo "\`\`\`" >> benchmark-results/performance-report.md
+          
+          # Add comparison if available
+          if [ -f "benchmark-results/comparison-summary.md" ]; then
+            echo "" >> benchmark-results/performance-report.md
+            cat benchmark-results/comparison-summary.md >> benchmark-results/performance-report.md
+          fi
+          
+          echo "✅ Performance report generated"
+
+      - name: Comment PR with performance results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            try {
+              const report = fs.readFileSync('benchmark-results/performance-report.md', 'utf8');
+              
+              // Find existing performance comment
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+              
+              const botComment = comments.data.find(comment => 
+                comment.user.type === 'Bot' && 
+                comment.body.includes('🚀 SwiftConcur Performance Report')
+              );
+              
+              const commentBody = `${report}
+              
+              ---
+              *This comment will be automatically updated with each push to the PR.*`;
+              
+              if (botComment) {
+                // Update existing comment
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: botComment.id,
+                  body: commentBody
+                });
+              } else {
+                // Create new comment
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: commentBody
+                });
+              }
+            } catch (error) {
+              console.log('Error posting comment:', error);
+              // Don't fail the job if commenting fails
+            }
+
+      - name: Fail job on budget violations
+        run: |
+          if [ -f "benchmark-results/budget-analysis.txt" ] && grep -q "❌" benchmark-results/budget-analysis.txt; then
+            echo "💥 Performance budget violations detected!"
+            echo ""
+            cat benchmark-results/budget-analysis.txt
+            echo ""
+            echo "🔧 Performance optimization needed before merge."
+            exit 1
+          else
+            echo "✅ All performance budgets satisfied"
+          fi
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: |
+            benchmark-results/
+            !benchmark-results/*.json
+          retention-days: 30
+
+      - name: Performance trend analysis (main branch)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "📈 Analyzing performance trends..."
+          
+          cd benchmark-history
+          
+          # Generate trend analysis if we have enough data points
+          if [ $(ls benchmark_*.json 2>/dev/null | wc -l) -ge 5 ]; then
+            echo "Analyzing performance trends over time..."
+            
+            # Simple trend analysis using Python
+            python3 << 'EOF'
+          import json
+          import glob
+          import os
+          from datetime import datetime
+          
+          files = sorted(glob.glob('benchmark_*.json'))
+          if len(files) >= 5:
+              print("📊 Performance Trend Analysis (Last 5 Benchmarks)")
+              print("=" * 50)
+              
+              # Analyze trends for key benchmarks
+              key_benchmarks = ['xcresult_small', 'xcresult_medium', 'xcresult_large']
+              
+              for benchmark_name in key_benchmarks:
+                  times = []
+                  for file in files[-5:]:  # Last 5 results
+                      try:
+                          with open(file, 'r') as f:
+                              data = json.load(f)
+                              if 'benchmarks' in data:
+                                  for bench in data['benchmarks']:
+                                      if bench.get('id') == benchmark_name:
+                                          times.append(bench.get('typical', 0) / 1_000_000)  # Convert to ms
+                                          break
+                      except:
+                          continue
+                  
+                  if len(times) >= 3:
+                      trend = "📈 IMPROVING" if times[-1] < times[0] else "📉 DEGRADING" if times[-1] > times[0] else "➡️ STABLE"
+                      change = ((times[-1] - times[0]) / times[0]) * 100
+                      print(f"{benchmark_name}: {times[-1]:.2f}ms {trend} ({change:+.1f}%)")
+          EOF
+          fi
+
+      - name: Performance summary
+        run: |
+          echo ""
+          echo "🎯 Performance Budget Summary"
+          echo "============================="
+          
+          if [ -f "benchmark-results/budget-analysis.txt" ]; then
+            cat benchmark-results/budget-analysis.txt
+          fi
+          
+          echo ""
+          echo "📋 Key Metrics:"
+          echo "• Parsing Speed: Critical for CI/CD pipeline performance"
+          echo "• Memory Usage: Important for large codebases"
+          echo "• Regression Detection: Prevents performance degradation"
+          echo "• Trend Analysis: Long-term performance monitoring"
+          echo ""
+          echo "🎉 Performance budget check completed!"

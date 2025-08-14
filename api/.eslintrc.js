@@ -5,12 +5,38 @@ module.exports = {
     sourceType: 'module',
     project: './tsconfig.json',
   },
-  plugins: ['@typescript-eslint'],
+  plugins: ['@typescript-eslint', 'import', 'security'],
   extends: [
     'eslint:recommended',
     '@typescript-eslint/recommended',
     '@typescript-eslint/recommended-requiring-type-checking',
+    'plugin:import/recommended',
+    'plugin:import/typescript',
+    'plugin:security/recommended',
   ],
+  settings: {
+    'import/resolver': {
+      typescript: {
+        project: './tsconfig.json',
+      },
+    },
+  },
+  globals: {
+    // Cloudflare Workers globals
+    addEventListener: 'readonly',
+    caches: 'readonly',
+    crypto: 'readonly',
+    fetch: 'readonly',
+    Request: 'readonly',
+    Response: 'readonly',
+    Headers: 'readonly',
+    URL: 'readonly',
+    URLSearchParams: 'readonly',
+    ReadableStream: 'readonly',
+    WritableStream: 'readonly',
+    TransformStream: 'readonly',
+    WebSocket: 'readonly',
+  },
   root: true,
   env: {
     node: true,
@@ -49,6 +75,24 @@ module.exports = {
     'no-new-func': 'error',
     'no-script-url': 'error',
     
+    // Import rules
+    'import/order': [
+      'error',
+      {
+        groups: ['builtin', 'external', 'internal', ['parent', 'sibling'], 'index'],
+        'newlines-between': 'always',
+        alphabetize: { order: 'asc', caseInsensitive: true },
+      },
+    ],
+    'import/newline-after-import': 'error',
+    'import/no-duplicates': 'error',
+    
+    // Enhanced security rules
+    'security/detect-object-injection': 'error',
+    'security/detect-non-literal-regexp': 'error',
+    'security/detect-unsafe-regex': 'error',
+    'security/detect-possible-timing-attacks': 'warn',
+    
     // Best practices
     'no-unused-expressions': 'error',
     'no-useless-return': 'error',
@@ -56,6 +100,10 @@ module.exports = {
     'prefer-template': 'error',
     'object-shorthand': 'error',
     'arrow-body-style': ['error', 'as-needed'],
+    'max-depth': ['error', 4],
+    'max-lines-per-function': ['error', 100],
+    'complexity': ['error', 20],
+    'no-await-in-loop': 'error',
   },
   overrides: [
     {

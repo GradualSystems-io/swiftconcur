@@ -1,0 +1,659 @@
+name: Enhanced CI with Advanced Caching & Linting
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'parser/**'
+      - 'dashboard/**' 
+      - 'api/**'
+      - 'cli/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'parser/**'
+      - 'dashboard/**'
+      - 'api/**'
+      - 'cli/**'
+      - '.github/workflows/**'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Cache versioning for forced cache updates
+  CACHE_VERSION: v3
+  # Performance optimization
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+# Cancel previous runs on new push
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Warm up caches in parallel for better performance
+  cache-warmup:
+    name: Cache Warmup & Setup
+    runs-on: ubuntu-latest
+    outputs:
+      rust-cache-key: ${{ steps.rust-cache-key.outputs.key }}
+      node-cache-key: ${{ steps.node-cache-key.outputs.key }}
+      tools-cache-key: ${{ steps.tools-cache-key.outputs.key }}
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate cache keys
+        id: rust-cache-key
+        run: |
+          # Create composite cache key for Rust
+          RUST_KEY="${{ env.CACHE_VERSION }}-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Cargo.toml') }}"
+          echo "key=$RUST_KEY" >> $GITHUB_OUTPUT
+          echo "Generated Rust cache key: $RUST_KEY"
+          
+      - name: Generate Node.js cache keys
+        id: node-cache-key
+        run: |
+          # Create composite cache key for Node.js
+          DASHBOARD_HASH=$(find dashboard -name "package*.json" -exec sha256sum {} \; | sha256sum | cut -d' ' -f1 || echo "no-dashboard")
+          API_HASH=$(find api -name "package*.json" -exec sha256sum {} \; | sha256sum | cut -d' ' -f1 || echo "no-api")
+          NODE_KEY="${{ env.CACHE_VERSION }}-${{ runner.os }}-node-${DASHBOARD_HASH}-${API_HASH}"
+          echo "key=$NODE_KEY" >> $GITHUB_OUTPUT
+          echo "Generated Node cache key: $NODE_KEY"
+          
+      - name: Generate tools cache key
+        id: tools-cache-key
+        run: |
+          # Cache key for installed tools (cargo-nextest, tarpaulin, etc.)
+          TOOLS_KEY="${{ env.CACHE_VERSION }}-${{ runner.os }}-tools-${{ hashFiles('.github/workflows/**') }}"
+          echo "key=$TOOLS_KEY" >> $GITHUB_OUTPUT
+          echo "Generated tools cache key: $TOOLS_KEY"
+
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          components: rustfmt, clippy
+
+      # Advanced Rust dependency caching with multiple layers
+      - name: Cache Rust registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+          key: ${{ steps.rust-cache-key.outputs.key }}-registry
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-rust-registry-
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-rust-
+
+      - name: Cache Rust git dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git/db/
+          key: ${{ steps.rust-cache-key.outputs.key }}-git
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-rust-git-
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-rust-
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            target/
+            parser/target/
+            cli/target/
+          key: ${{ steps.rust-cache-key.outputs.key }}-target
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-rust-target-
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-rust-
+
+      # Cache installed cargo tools
+      - name: Cache cargo tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/
+          key: ${{ steps.tools-cache-key.outputs.key }}
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-tools-
+
+      # Pre-fetch and cache Node.js dependencies
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Cache Dashboard dependencies
+        if: hashFiles('dashboard/package-lock.json') != ''
+        uses: actions/cache@v4
+        with:
+          path: |
+            dashboard/node_modules/
+            dashboard/.next/cache/
+          key: ${{ steps.node-cache-key.outputs.key }}-dashboard
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-node-dashboard-
+
+      - name: Cache API dependencies  
+        if: hashFiles('api/package-lock.json') != ''
+        uses: actions/cache@v4
+        with:
+          path: |
+            api/node_modules/
+            api/.wrangler/
+          key: ${{ steps.node-cache-key.outputs.key }}-api
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-node-api-
+
+  rust-linting:
+    name: Rust Linting & Formatting
+    runs-on: ubuntu-latest
+    needs: cache-warmup
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain with components
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          components: rustfmt, clippy, rust-docs
+
+      # Restore caches in parallel
+      - name: Restore Rust registry cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+          key: ${{ needs.cache-warmup.outputs.rust-cache-key }}-registry
+          
+      - name: Restore Rust git cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cargo/git/db/
+          key: ${{ needs.cache-warmup.outputs.rust-cache-key }}-git
+          
+      - name: Restore Rust build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            target/
+            parser/target/
+            cli/target/
+          key: ${{ needs.cache-warmup.outputs.rust-cache-key }}-target
+
+      # Comprehensive formatting check
+      - name: Check Rust formatting
+        run: |
+          echo "🔍 Checking Rust code formatting..."
+          cd parser
+          
+          # Check formatting with detailed output
+          if ! cargo fmt --all -- --check --verbose; then
+            echo ""
+            echo "❌ Code formatting issues found!"
+            echo "💡 To fix formatting issues, run:"
+            echo "   cd parser && cargo fmt --all"
+            echo ""
+            echo "📋 Files with formatting issues:"
+            cargo fmt --all -- --check --verbose 2>&1 | grep "Diff in" || true
+            exit 1
+          fi
+          
+          echo "✅ All Rust code is properly formatted"
+
+      # Advanced Clippy linting with multiple configurations  
+      - name: Run Clippy linting (Standard)
+        run: |
+          echo "🔍 Running Clippy with standard lints..."
+          cd parser
+          
+          cargo clippy --workspace --all-targets --all-features \
+            -- -D warnings \
+            -D clippy::all \
+            -D clippy::pedantic \
+            -A clippy::module_name_repetitions \
+            -A clippy::missing_errors_doc \
+            -A clippy::missing_panics_doc \
+            --cap-lints warn
+
+      - name: Run Clippy linting (Nursery - Advisory)
+        run: |
+          echo "🔍 Running Clippy with nursery lints (advisory)..."
+          cd parser
+          
+          # Run nursery lints but don't fail on them (advisory only)
+          cargo clippy --workspace --all-targets --all-features \
+            -- -W clippy::nursery \
+            -A clippy::redundant_pub_crate \
+            -A clippy::option_if_let_else \
+            || echo "⚠️ Nursery lints found (advisory only)"
+
+      - name: Run Clippy linting (Cargo - Dependencies)
+        run: |
+          echo "🔍 Running Clippy with cargo lints..."
+          cd parser
+          
+          cargo clippy --workspace --all-targets --all-features \
+            -- -D clippy::cargo \
+            -A clippy::multiple_crate_versions \
+            -A clippy::cargo_common_metadata
+
+      - name: Run Clippy linting (Restriction - Selective)
+        run: |
+          echo "🔍 Running selective restriction lints..."
+          cd parser
+          
+          # Only enable specific restriction lints that are useful
+          cargo clippy --workspace --all-targets --all-features \
+            -- -D clippy::unwrap_used \
+            -D clippy::expect_used \
+            -D clippy::panic \
+            -D clippy::unimplemented \
+            -D clippy::todo \
+            -W clippy::print_stdout \
+            -W clippy::print_stderr \
+            -W clippy::dbg_macro
+
+      # Documentation linting
+      - name: Check documentation
+        run: |
+          echo "📚 Checking Rust documentation..."
+          cd parser
+          
+          # Check that public items have documentation
+          RUSTDOCFLAGS="-D missing_docs -D rustdoc::missing_crate_level_docs" \
+          cargo doc --workspace --no-deps --document-private-items --all-features
+
+      # Security audit
+      - name: Security audit
+        run: |
+          echo "🔒 Running security audit..."
+          cd parser
+          
+          # Install cargo-audit if not cached
+          if ! command -v cargo-audit &> /dev/null; then
+            cargo install cargo-audit --locked
+          fi
+          
+          cargo audit --format json --output audit-report.json || AUDIT_FAILED=true
+          
+          if [ "$AUDIT_FAILED" = true ]; then
+            echo "⚠️ Security vulnerabilities found:"
+            cargo audit
+            echo "::warning::Security vulnerabilities detected in dependencies"
+          else
+            echo "✅ No security vulnerabilities found"
+          fi
+
+      - name: Upload lint reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-lint-reports
+          path: |
+            parser/audit-report.json
+            parser/target/doc/
+          retention-days: 7
+
+  rust-testing:
+    name: Rust Testing with Cache
+    runs-on: ubuntu-latest
+    needs: [cache-warmup, rust-linting]
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      # Restore all caches
+      - name: Restore Rust caches
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+            parser/target/
+            cli/target/
+          key: ${{ needs.cache-warmup.outputs.rust-cache-key }}-target
+
+      - name: Restore tools cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cargo/bin/
+          key: ${{ needs.cache-warmup.outputs.tools-cache-key }}
+
+      # Install tools with caching
+      - name: Install testing tools
+        run: |
+          echo "🔧 Installing/verifying testing tools..."
+          
+          # Check if tools are already cached
+          if ! command -v cargo-nextest &> /dev/null; then
+            echo "Installing cargo-nextest..."
+            cargo install cargo-nextest --locked
+          else
+            echo "✅ cargo-nextest already available"
+          fi
+          
+          if ! command -v cargo-tarpaulin &> /dev/null; then
+            echo "Installing cargo-tarpaulin..." 
+            cargo install cargo-tarpaulin --locked
+          else
+            echo "✅ cargo-tarpaulin already available"
+          fi
+          
+          # Verify installations
+          cargo nextest --version
+          cargo tarpaulin --version
+
+      - name: Run tests with optimizations
+        run: |
+          echo "🧪 Running optimized test suite..."
+          cd parser
+          
+          # Use nextest for faster parallel execution
+          cargo nextest run \
+            --workspace \
+            --all-features \
+            --profile ci \
+            --verbose \
+            --no-fail-fast
+
+      - name: Run doctests
+        run: |
+          echo "📚 Running doctests..."
+          cd parser
+          cargo test --doc --workspace --all-features
+
+      - name: Generate coverage with caching
+        run: |
+          echo "📊 Generating coverage report with optimizations..."
+          cd parser
+          
+          # Use tarpaulin with optimized settings
+          cargo tarpaulin \
+            --workspace \
+            --all-features \
+            --engine llvm \
+            --out xml \
+            --out html \
+            --out json \
+            --output-dir ../coverage \
+            --timeout 120 \
+            --fail-under 80 \
+            --verbose \
+            --skip-clean
+
+      - name: Upload coverage and save cache
+        uses: codecov/codecov-action@v3
+        with:
+          file: coverage/cobertura.xml
+          flags: rust
+          fail_ci_if_error: false
+
+      # Save updated caches
+      - name: Save Rust build cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: |
+            target/
+            parser/target/
+            cli/target/
+          key: ${{ needs.cache-warmup.outputs.rust-cache-key }}-target
+
+  javascript-linting:
+    name: JavaScript/TypeScript Linting
+    runs-on: ubuntu-latest
+    needs: cache-warmup
+    strategy:
+      matrix:
+        component: [dashboard, api]
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js with caching
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+
+      - name: Restore Node.js dependencies cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ matrix.component }}/node_modules/
+          key: ${{ needs.cache-warmup.outputs.node-cache-key }}-${{ matrix.component }}
+
+      - name: Install dependencies with cache optimization
+        run: |
+          cd ${{ matrix.component }}
+          
+          # Use npm ci for reproducible installs
+          if [ -f package-lock.json ]; then
+            echo "📦 Installing dependencies with npm ci..."
+            npm ci --prefer-offline --no-audit
+          else
+            echo "⚠️ No package-lock.json found, using npm install..."
+            npm install
+          fi
+
+      - name: TypeScript compilation check
+        run: |
+          echo "🔍 Checking TypeScript compilation..."
+          cd ${{ matrix.component }}
+          
+          if [ -f tsconfig.json ]; then
+            # Check compilation without emitting files
+            npx tsc --noEmit --pretty
+            echo "✅ TypeScript compilation successful"
+          else
+            echo "ℹ️ No TypeScript configuration found"
+          fi
+
+      - name: ESLint with caching
+        run: |
+          echo "🔍 Running ESLint with caching..."
+          cd ${{ matrix.component }}
+          
+          # Run ESLint with cache and detailed reporting
+          if [ -f .eslintrc.js ] || [ -f .eslintrc.json ] || [ -f eslint.config.js ]; then
+            npx eslint . \
+              --ext .js,.jsx,.ts,.tsx \
+              --cache \
+              --cache-location .eslintcache \
+              --format stylish \
+              --max-warnings 0
+            echo "✅ ESLint checks passed"
+          else
+            echo "⚠️ No ESLint configuration found"
+          fi
+
+      - name: Prettier formatting check
+        run: |
+          echo "🔍 Checking Prettier formatting..."
+          cd ${{ matrix.component }}
+          
+          if [ -f .prettierrc ] || [ -f .prettierrc.js ] || [ -f .prettierrc.json ]; then
+            npx prettier --check . --ignore-unknown
+            echo "✅ Prettier formatting check passed"
+          else
+            echo "ℹ️ No Prettier configuration found"
+          fi
+
+      - name: Package audit
+        run: |
+          echo "🔒 Running npm audit..."
+          cd ${{ matrix.component }}
+          
+          npm audit --audit-level high --json > audit-report.json || AUDIT_FAILED=true
+          
+          if [ "$AUDIT_FAILED" = true ]; then
+            echo "⚠️ High/critical vulnerabilities found:"
+            npm audit --audit-level high
+            echo "::warning::NPM audit found vulnerabilities in ${{ matrix.component }}"
+          else
+            echo "✅ No high/critical vulnerabilities found"
+          fi
+
+      # Save Node.js cache
+      - name: Save Node.js dependencies cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ${{ matrix.component }}/node_modules/
+          key: ${{ needs.cache-warmup.outputs.node-cache-key }}-${{ matrix.component }}
+
+      - name: Upload lint reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.component }}-lint-reports
+          path: |
+            ${{ matrix.component }}/audit-report.json
+            ${{ matrix.component }}/.eslintcache
+          retention-days: 7
+
+  performance-benchmarks:
+    name: Performance Benchmarks with Cache
+    runs-on: ubuntu-latest
+    needs: [cache-warmup, rust-linting]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Restore Rust caches
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+            parser/target/
+          key: ${{ needs.cache-warmup.outputs.rust-cache-key }}-target
+
+      - name: Run benchmarks with caching
+        run: |
+          echo "⚡ Running performance benchmarks..."
+          cd parser
+          
+          # Run benchmarks with JSON output for processing
+          cargo bench --workspace -- --output-format json > ../bench-results.json
+          
+          # Also run in human-readable format
+          cargo bench --workspace
+
+      - name: Store benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        if: github.ref == 'refs/heads/main'
+        with:
+          tool: 'cargo'
+          output-file-path: bench-results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          comment-on-alert: true
+          alert-threshold: '200%'
+
+  cache-analysis:
+    name: Cache Performance Analysis
+    runs-on: ubuntu-latest
+    needs: [rust-testing, javascript-linting]
+    if: always()
+    
+    steps:
+      - name: Cache hit analysis
+        run: |
+          echo "📊 Cache Performance Analysis"
+          echo "============================="
+          
+          # This would typically analyze cache hit rates
+          # For now, we'll output cache information
+          echo "Rust Cache Key: ${{ needs.cache-warmup.outputs.rust-cache-key }}"
+          echo "Node Cache Key: ${{ needs.cache-warmup.outputs.node-cache-key }}"
+          echo "Tools Cache Key: ${{ needs.cache-warmup.outputs.tools-cache-key }}"
+          
+          echo ""
+          echo "💡 Cache Optimization Tips:"
+          echo "- Rust incremental compilation: ${{ env.CARGO_INCREMENTAL }}"
+          echo "- Cache version: ${{ env.CACHE_VERSION }}"
+          echo "- Parallel job execution: Enabled"
+
+  quality-gate:
+    name: Quality Gate Summary
+    runs-on: ubuntu-latest
+    needs: [rust-linting, rust-testing, javascript-linting, performance-benchmarks]
+    if: always()
+    
+    steps:
+      - name: Quality gate evaluation
+        run: |
+          echo "🚦 Quality Gate Evaluation"
+          echo "=========================="
+          
+          # Check job results
+          RUST_LINTING_RESULT="${{ needs.rust-linting.result }}"
+          RUST_TESTING_RESULT="${{ needs.rust-testing.result }}"
+          JS_LINTING_RESULT="${{ needs.javascript-linting.result }}"
+          BENCHMARKS_RESULT="${{ needs.performance-benchmarks.result }}"
+          
+          echo "Rust Linting: $RUST_LINTING_RESULT"
+          echo "Rust Testing: $RUST_TESTING_RESULT" 
+          echo "JS/TS Linting: $JS_LINTING_RESULT"
+          echo "Benchmarks: $BENCHMARKS_RESULT"
+          echo ""
+          
+          # Determine overall status
+          FAILED_JOBS=0
+          
+          if [ "$RUST_LINTING_RESULT" != "success" ]; then
+            echo "❌ Rust linting failed"
+            FAILED_JOBS=$((FAILED_JOBS + 1))
+          fi
+          
+          if [ "$RUST_TESTING_RESULT" != "success" ]; then
+            echo "❌ Rust testing failed"
+            FAILED_JOBS=$((FAILED_JOBS + 1))
+          fi
+          
+          if [ "$JS_LINTING_RESULT" != "success" ]; then
+            echo "❌ JavaScript/TypeScript linting failed"
+            FAILED_JOBS=$((FAILED_JOBS + 1))
+          fi
+          
+          if [ $FAILED_JOBS -eq 0 ]; then
+            echo "✅ All quality gates passed!"
+            echo "🎉 Code is ready for merge"
+          else
+            echo "❌ $FAILED_JOBS quality gate(s) failed"
+            echo "🔧 Please fix the issues before merging"
+            exit 1
+          fi

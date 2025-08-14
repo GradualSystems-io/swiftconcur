@@ -1,0 +1,79 @@
+# Clippy configuration for SwiftConcur parser
+# This file configures Clippy linting rules for strict code quality
+
+# Maximum cognitive complexity allowed in functions
+cognitive-complexity-threshold = 30
+
+# Maximum number of lines allowed in functions
+too-many-lines-threshold = 100
+
+# Maximum number of arguments allowed in functions  
+too-many-arguments-threshold = 7
+
+# Maximum nesting level for type definitions
+type-complexity-threshold = 250
+
+# Maximum number of single char bindings allowed
+single-char-binding-threshold = 4
+
+# Disallowed function/method names
+disallowed-names = [
+    "foo",
+    "bar", 
+    "baz",
+    "quux",
+    "data",
+    "temp",
+    "tmp",
+    "test",
+]
+
+# Disallowed types that should not be used
+disallowed-types = [
+    # Prefer specific error types over generic ones
+    { path = "std::error::Error", reason = "Use specific error types instead of trait objects" },
+    
+    # Discourage use of unsafe pointers without good reason
+    { path = "*const", reason = "Raw pointers should be avoided unless necessary" },
+    { path = "*mut", reason = "Raw pointers should be avoided unless necessary" },
+    
+    # Discourage HashMap for small collections
+    { path = "std::collections::HashMap", reason = "Consider BTreeMap for deterministic iteration or Vec for small collections" },
+]
+
+# Configure specific lints
+# Allow some pedantic lints that might be too noisy
+allow-expect-in-tests = true
+allow-unwrap-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# Documentation requirements
+missing-docs-in-crate-items = true
+
+# Performance-related settings
+trivial-copy-size-limit = 128
+avoid-breaking-exported-api = false
+
+# Literals configuration
+literal-representation-threshold = 10
+
+# Encourage the use of std library functions
+prefer-self-in-trait-impls = true
+
+# Enum variant configuration
+enum-variant-size-threshold = 200
+
+# Large error types threshold
+large-error-threshold = 128
+
+# Stack size limit for large types
+large-stack-arrays-threshold = 512000
+
+# String literal formatting
+max-suggested-slice-pattern-length = 3
+
+# Allow certain complexity in tests
+test-complexity-threshold = 50
+
+# Verbose bit mask threshold
+verbose-bit-mask-threshold = 1

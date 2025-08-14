@@ -1,9 +1,19 @@
-name: Test & Lint
+name: Enhanced CI with Caching & Linting
 on: [push, pull_request]
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Cache versioning for forced updates
+  CACHE_VERSION: v1
+  # Performance optimizations
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+
+# Cancel previous runs on new commits
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-and-lint:
@@ -11,36 +21,119 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - uses: actions-rs/toolchain@v1
+      - name: Setup Rust toolchain with components
+        uses: actions-rs/toolchain@v1
         with: 
           toolchain: stable
           profile: minimal
           override: true
           components: rustfmt, clippy
 
-      - name: Cache dependencies
-        uses: actions/cache@v3
+      # Multi-layer caching strategy for maximum efficiency
+      - name: Cache Rust registry
+        uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+          key: ${{ env.CACHE_VERSION }}-${{ runner.os }}-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-registry-
+
+      - name: Cache Rust git dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git/db/
+          key: ${{ env.CACHE_VERSION }}-${{ runner.os }}-git-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-git-
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            target/
+            parser/target/
+            cli/target/
+          key: ${{ env.CACHE_VERSION }}-${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-target-
+
+      # Cache installed cargo tools for faster CI
+      - name: Cache cargo tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/
+          key: ${{ env.CACHE_VERSION }}-${{ runner.os }}-tools-${{ hashFiles('.github/workflows/**') }}
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-tools-
 
       - name: Install testing tools
         run: |
-          cargo install cargo-nextest --locked
-          cargo install cargo-tarpaulin --locked
-
-      - name: Check formatting
-        run: |
-          cd parser
-          cargo fmt --all -- --check
+          # Only install if not cached
+          if ! command -v cargo-nextest &> /dev/null; then
+            echo "Installing cargo-nextest..."
+            cargo install cargo-nextest --locked
+          else
+            echo "✅ cargo-nextest already available"
+          fi
           
-      - name: Run Clippy
+          if ! command -v cargo-tarpaulin &> /dev/null; then
+            echo "Installing cargo-tarpaulin..."
+            cargo install cargo-tarpaulin --locked
+          else
+            echo "✅ cargo-tarpaulin already available"
+          fi
+
+      # Enhanced formatting check with detailed output
+      - name: Check Rust formatting
         run: |
+          echo "🔍 Checking Rust code formatting..."
           cd parser
-          cargo clippy --workspace --all-targets -- -D warnings
+          
+          # Check formatting with detailed output on failure
+          if ! cargo fmt --all -- --check; then
+            echo ""
+            echo "❌ Code formatting issues found!"
+            echo "💡 Run 'cd parser && cargo fmt --all' to fix formatting"
+            echo ""
+            echo "📋 Formatting diff:"
+            cargo fmt --all -- --check --verbose || true
+            exit 1
+          fi
+          echo "✅ All code is properly formatted"
+
+      # Enhanced Clippy with comprehensive linting
+      - name: Run Clippy linting
+        run: |
+          echo "🔍 Running comprehensive Clippy analysis..."
+          cd parser
+          
+          # Use clippy configuration file and comprehensive lint set
+          cargo clippy --workspace --all-targets --all-features \
+            -- -D warnings \
+            -D clippy::all \
+            -D clippy::pedantic \
+            -D clippy::cargo \
+            -A clippy::module_name_repetitions \
+            -A clippy::missing_errors_doc \
+            -A clippy::missing_panics_doc \
+            -A clippy::multiple_crate_versions
+            
+          echo "✅ Clippy analysis passed"
+
+      # Additional security and quality checks
+      - name: Run security audit
+        run: |
+          echo "🔒 Running security audit..."
+          cd parser
+          
+          # Install cargo-audit if not available
+          if ! command -v cargo-audit &> /dev/null; then
+            cargo install cargo-audit --locked
+          fi
+          
+          cargo audit || echo "⚠️ Security audit found issues (non-blocking)"
           
       - name: Run tests
         run: |

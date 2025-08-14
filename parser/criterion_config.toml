@@ -1,0 +1,121 @@
+# Criterion.rs Configuration for SwiftConcur Performance Benchmarks
+# This configuration ensures consistent and reliable benchmark measurements
+
+[measurement]
+# Warm up time - time to spend warming up the benchmark before measurement
+warm_up_time = "3s"
+
+# Measurement time - time to spend measuring the benchmark
+measurement_time = "10s"
+
+# Confidence level for statistical analysis (95% confidence)
+confidence_level = 0.95
+
+# Significance level for detecting changes (5% alpha)
+significance_level = 0.05
+
+# Noise threshold - minimum change to be considered significant
+noise_threshold = 0.01
+
+[output]
+# Enable verbose output for detailed analysis
+verbose = true
+
+# Generate HTML reports for visual analysis
+html_reports_enabled = true
+
+# Generate plots for trend visualization  
+plots_enabled = true
+
+[sampling]
+# Sample size for statistical analysis
+sample_size = 100
+
+# Maximum number of iterations per sample
+max_iterations = 1000
+
+# Minimum time per iteration (nanoseconds)
+min_iteration_time = 1000
+
+[comparison]
+# Enable comparison against baseline measurements
+baseline_enabled = true
+
+# Threshold for regression detection (percentage)
+regression_threshold = 0.10  # 10%
+
+# Threshold for improvement detection (percentage)
+improvement_threshold = 0.05  # 5%
+
+[targets]
+# Performance budget targets (in milliseconds)
+# These align with our CI performance budget thresholds
+
+[targets.parsing]
+# Small file parsing (< 10 warnings)
+small_file_target = 10.0
+
+# Medium file parsing (10-100 warnings) 
+medium_file_target = 50.0
+
+# Large file parsing (100+ warnings)
+large_file_target = 200.0
+
+[targets.xcodebuild]
+# Text-based xcodebuild output parsing
+small_build_target = 15.0
+medium_build_target = 75.0
+large_build_target = 300.0
+
+[targets.memory]
+# Memory usage targets (in MB)
+max_memory_usage = 100.0
+peak_memory_threshold = 150.0
+
+[profiling]
+# Enable profiling data collection
+enabled = true
+
+# Collect memory allocation information
+track_allocations = true
+
+# Collect CPU usage information
+track_cpu_usage = true
+
+# Profile output directory
+output_dir = "target/criterion/profiles"
+
+[regression_detection]
+# Automatic regression detection settings
+enabled = true
+
+# Fail benchmarks if regression exceeds threshold
+fail_on_regression = true
+
+# Historical data points to consider for trend analysis
+history_length = 10
+
+# Statistical method for regression detection
+method = "t_test"  # or "mann_whitney"
+
+[notifications]
+# Integration settings for alerts and notifications
+slack_webhook = ""  # Set via environment variable
+github_token = ""   # Set via environment variable  
+github_repo = ""    # Set via environment variable
+
+[caching]
+# Benchmark result caching for comparison
+cache_enabled = true
+cache_directory = "benchmark-cache"
+cache_retention_days = 30
+
+[environment]
+# Environment-specific settings
+ci_mode = false  # Will be overridden in CI
+
+[environment.ci]
+# CI-specific optimizations
+reduce_sample_size = true
+quick_mode = false
+parallel_execution = true
