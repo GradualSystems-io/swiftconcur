@@ -1,0 +1,3 @@
+•	Optimize Data Structures: If the log processing involves collecting data (e.g., counting errors or building a JSON summary), choose efficient data structures. Use Vec with pre-allocated capacity if the size is known roughly, or use iterators instead of intermediate collections when possible. 
+
+For any heavy algorithm, consider its complexity – e.g., avoid any O(n^2) operations over a 100MB input. Linear passes or modest linearithmic sorting should be the upper bound.

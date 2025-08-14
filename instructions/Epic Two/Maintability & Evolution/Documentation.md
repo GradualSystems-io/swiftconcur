@@ -1,0 +1,3 @@
+Documentation and Comments: Write thorough documentation for the code – both at the high level (README or a docs folder describing the system architecture) and in code comments where the logic is non-trivial. 
+
+This is crucial since you want AI agents (and new developers) to grasp the system quickly. Document the purpose of each module, the expected input/output of functions, and any tricky parts of the log format. Well-documented code is much easier and safer for AI like Claude to modify.
