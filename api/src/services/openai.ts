@@ -197,7 +197,7 @@ Response format:
     
     // Limit length
     if (cleaned.length > 800) {
-      cleaned = cleaned.substring(0, 800) + '...';
+      cleaned = `${cleaned.substring(0, 800)  }...`;
     }
     
     return cleaned;

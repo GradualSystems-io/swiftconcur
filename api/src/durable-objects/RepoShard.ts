@@ -231,7 +231,7 @@ export class RepoShard implements DurableObject {
         }));
         break;
         
-      case 'get_activity':
+      case 'get_activity': {
         const limit = message.limit || 10;
         const activities = this.recentActivity
           .slice(-Math.min(limit, 50))
@@ -242,6 +242,7 @@ export class RepoShard implements DurableObject {
           data: activities,
         }));
         break;
+      }
         
       default:
         ws.send(JSON.stringify({

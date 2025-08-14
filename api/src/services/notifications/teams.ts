@@ -58,7 +58,7 @@ export class TeamsService {
         sections: [{
           activityTitle: title || 'SwiftConcur CI',
           activitySubtitle: 'Automated notification',
-          text: text,
+          text,
         }],
       };
       
