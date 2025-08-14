@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::fs;
 use std::io::BufReader;
 use swiftconcur_parser::parser::{XcodeBuildParser, XcresultParser};
@@ -187,7 +187,7 @@ fn bench_parsing_with_context_levels(c: &mut Criterion) {
 fn bench_memory_usage(c: &mut Criterion) {
     let large_file = create_synthetic_large_input(
         &fs::read_to_string("tests/fixtures/comprehensive_warnings.json").unwrap(),
-        200
+        200,
     );
     
     c.bench_function("memory_stress_test", |b| {
@@ -205,8 +205,8 @@ fn bench_memory_usage(c: &mut Criterion) {
 }
 
 fn bench_filtering_performance(c: &mut Criterion) {
-    use swiftconcur_parser::parser::filter_warnings;
     use swiftconcur_parser::models::WarningFilter;
+    use swiftconcur_parser::parser::filter_warnings;
     
     let test_file = fs::read_to_string("tests/fixtures/comprehensive_warnings.json")
         .expect("Failed to read test file");
@@ -217,20 +217,24 @@ fn bench_filtering_performance(c: &mut Criterion) {
     let mut group = c.benchmark_group("filtering");
     
     group.bench_function("no_filter", |b| {
-        b.iter(|| {
-            filter_warnings(black_box(warnings.clone()), black_box(WarningFilter::All))
-        })
+        b.iter(|| filter_warnings(black_box(warnings.clone()), black_box(WarningFilter::All)))
     });
     
     group.bench_function("sendable_filter", |b| {
         b.iter(|| {
-            filter_warnings(black_box(warnings.clone()), black_box(WarningFilter::SendableOnly))
+            filter_warnings(
+                black_box(warnings.clone()),
+                black_box(WarningFilter::SendableOnly),
+            )
         })
     });
     
     group.bench_function("actor_filter", |b| {
         b.iter(|| {
-            filter_warnings(black_box(warnings.clone()), black_box(WarningFilter::ActorIsolationOnly))
+            filter_warnings(
+                black_box(warnings.clone()),
+                black_box(WarningFilter::ActorIsolationOnly),
+            )
         })
     });
     

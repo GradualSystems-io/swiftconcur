@@ -251,7 +251,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd ${{ matrix.component }}
-          npm ci
+          npm ci || npm install
 
       - name: Check TypeScript compilation
         run: |
