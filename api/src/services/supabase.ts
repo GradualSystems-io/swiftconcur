@@ -37,7 +37,7 @@ export class SupabaseService {
     
     try {
       // Start transaction
-      const { data: run, error: runError } = await this.client
+      const { error: runError } = await this.client
         .from('runs')
         .insert({
           id: run_id,
@@ -289,7 +289,7 @@ export class SupabaseService {
    */
   async healthCheck(): Promise<boolean> {
     try {
-      const { data, error } = await this.client
+      const { error } = await this.client
         .from('repos')
         .select('count')
         .limit(1);

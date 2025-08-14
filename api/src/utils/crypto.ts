@@ -15,7 +15,7 @@ export class CryptoUtils {
   /**
    * Generate a repository API token with metadata
    */
-  static async generateRepoToken(repoId: string): Promise<string> {
+  static async generateRepoToken(_repoId: string): Promise<string> {
     const timestamp = Date.now().toString(36);
     const random = await this.generateSecureToken(16);
     const prefix = 'scr_'; // SwiftConcur Repository token

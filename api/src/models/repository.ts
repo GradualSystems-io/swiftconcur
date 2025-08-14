@@ -62,7 +62,7 @@ export class RepositoryService {
     return limits[tier];
   }
   
-  static validateRepositoryAccess(repoId: string, tier: PlanTier, warningsCount: number): boolean {
+  static validateRepositoryAccess(_repoId: string, tier: PlanTier, warningsCount: number): boolean {
     const limits = this.getPlanLimits(tier);
     return warningsCount <= limits.maxWarningsPerRun;
   }

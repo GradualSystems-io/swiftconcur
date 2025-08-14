@@ -1,4 +1,3 @@
-import type { Env } from '../types';
 
 /**
  * R2 storage service for archiving raw xcresult files
@@ -117,8 +116,8 @@ export class R2Service {
    * Generate presigned URL for direct upload (if needed for large files)
    */
   async generatePresignedUploadUrl(
-    key: string,
-    expiresIn: number = 3600 // 1 hour
+    _key: string,
+    _expiresIn: number = 3600 // 1 hour
   ): Promise<string> {
     // Note: Cloudflare R2 doesn't support presigned URLs in the same way as S3
     // This would need to be implemented using Cloudflare's API or Workers

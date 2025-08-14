@@ -7,7 +7,7 @@ import { createSupabaseService } from '../services/supabase';
 export async function handleRun(
   request: RequestWithRepo,
   env: Env,
-  ctx: ExecutionContext
+  _ctx: ExecutionContext
 ): Promise<Response> {
   try {
     // Validate request method
@@ -59,12 +59,12 @@ export async function handleRun(
     
     // Process warnings data
     const processedWarnings = runData.warnings.map(warning => ({
-      id: warning.id,
+      id: (warning as any).id,
       type: warning.type,
       severity: warning.severity,
       file_path: warning.file_path,
-      line_number: warning.line,
-      column_number: warning.column,
+      line_number: warning.line_number,
+      column_number: warning.column_number,
       message: warning.message,
       code_context: warning.code_context,
       suggested_fix: warning.suggested_fix,

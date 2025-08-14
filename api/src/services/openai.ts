@@ -107,7 +107,7 @@ export class OpenAIService {
    * Build prompt for OpenAI
    */
   private buildPrompt(data: any, analysis: any): string {
-    const topFiles = Array.from(analysis.fileGroups.entries())
+    const topFiles = Array.from(analysis.fileGroups.entries() as Iterable<[string, number]>)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 3)
       .map(([file, count]) => `${file}: ${count} warnings`);
@@ -213,7 +213,7 @@ Response format:
                      analysis.severityCounts.high > 5 ? 'Medium' : 'Low';
     
     const topType = Object.entries(analysis.typeCounts)
-      .sort(([, a], [, b]) => b - a)[0][0];
+      .sort(([, a], [, b]) => (b as number) - (a as number))[0][0];
     
     return `🎯 **Summary:** Found ${analysis.totalCount} Swift concurrency warnings, primarily ${topType.replace('_', ' ')} issues.
 

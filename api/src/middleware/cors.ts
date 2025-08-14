@@ -6,7 +6,7 @@ import type { Env } from '../types';
 export async function corsMiddleware(
   request: Request,
   env: Env,
-  ctx: ExecutionContext
+  _ctx: ExecutionContext
 ): Promise<Response | void> {
   const origin = request.headers.get('Origin');
   const method = request.method;

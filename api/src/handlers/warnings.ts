@@ -1,5 +1,5 @@
 import type { Env, RequestWithRepo, APIResponse } from '../types';
-import { WarningProcessor, WarningPayloadSchema } from '../models/warning';
+import { WarningProcessor } from '../models/warning';
 import { RepositoryService } from '../models/repository';
 import { createSupabaseService } from '../services/supabase';
 import { uploadToR2, generateWarningsKey } from '../services/r2';
@@ -46,8 +46,8 @@ export async function handleWarnings(
     }
     
     // Extract warnings JSON file
-    const warningsFile = formData.get('warnings.json') as File;
-    if (!warningsFile) {
+    const warningsFile = formData.get('warnings.json') as File | null;
+    if (!warningsFile || typeof warningsFile === 'string') {
       return createErrorResponse('Missing warnings.json file', 400);
     }
     
@@ -279,15 +279,3 @@ function createErrorResponse(
   });
 }
 
-/**
- * Validate file mime type
- */
-function isValidFileType(file: File): boolean {
-  const allowedTypes = [
-    'application/json',
-    'text/json',
-    'text/plain',
-  ];
-  
-  return allowedTypes.includes(file.type) || file.name.endsWith('.json');
-}

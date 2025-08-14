@@ -5,7 +5,6 @@ import type { Env } from '../types';
  */
 export class RepoShard implements DurableObject {
   private state: DurableObjectState;
-  private env: Env;
   private connections: Set<WebSocket> = new Set();
   private recentActivity: Array<{
     type: string;
@@ -13,9 +12,8 @@ export class RepoShard implements DurableObject {
     timestamp: number;
   }> = [];
   
-  constructor(state: DurableObjectState, env: Env) {
+  constructor(state: DurableObjectState, _env: Env) {
     this.state = state;
-    this.env = env;
     
     // Set up alarm for periodic cleanup
     this.state.blockConcurrencyWhile(async () => {
@@ -117,7 +115,7 @@ export class RepoShard implements DurableObject {
     }
     
     try {
-      const data = await request.json();
+      const data = await request.json() as Record<string, any>;
       
       // Store activity
       const activity = {
@@ -298,22 +296,4 @@ export class RepoShard implements DurableObject {
     return creationTime;
   }
   
-  /**
-   * Broadcast message to all connected clients
-   */
-  private async broadcast(message: any): Promise<void> {
-    const messageStr = JSON.stringify(message);
-    const promises = Array.from(this.connections).map(ws => {
-      try {
-        ws.send(messageStr);
-        return Promise.resolve();
-      } catch (error) {
-        console.error('Error broadcasting to WebSocket:', error);
-        this.connections.delete(ws);
-        return Promise.resolve();
-      }
-    });
-    
-    await Promise.all(promises);
-  }
 }

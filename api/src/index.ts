@@ -20,7 +20,7 @@ const router = Router<RequestWithRepo, [Env, ExecutionContext]>();
 router.all('*', corsMiddleware);
 
 // Health check endpoint (no auth required)
-router.get('/health', async (request, env, ctx) => {
+router.get('/health', async (request, env, _ctx) => {
   try {
     // Basic health check with optional service status
     const health = {
@@ -38,7 +38,7 @@ router.get('/health', async (request, env, ctx) => {
         checkR2Health(env),
       ]);
       
-      health.services = {
+      (health as any).services = {
         database: checks[0].status === 'fulfilled' ? checks[0].value : false,
         ai: checks[1].status === 'fulfilled' ? checks[1].value : false,
         storage: checks[2].status === 'fulfilled' ? checks[2].value : false,
@@ -111,7 +111,7 @@ export default {
   async queue(
     batch: MessageBatch<any>,
     env: Env,
-    ctx: ExecutionContext
+    _ctx: ExecutionContext
   ): Promise<void> {
     console.log(`Processing AI queue batch with ${batch.messages.length} messages`);
     
@@ -143,7 +143,7 @@ export default {
   /**
    * Scheduled handler for maintenance tasks
    */
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(_event: ScheduledEvent, _env: Env, _ctx: ExecutionContext): Promise<void> {
     console.log('Running scheduled maintenance tasks');
     
     try {
@@ -186,7 +186,7 @@ async function checkOpenAIHealth(env: Env): Promise<boolean> {
 async function checkR2Health(env: Env): Promise<boolean> {
   try {
     // Simple R2 health check - try to list objects
-    const objects = await env.XCRESULT_BUCKET.list({ limit: 1 });
+    await env.XCRESULT_BUCKET.list({ limit: 1 });
     return true;
   } catch (error) {
     console.error('R2 health check failed:', error);

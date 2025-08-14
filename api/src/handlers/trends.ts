@@ -8,7 +8,7 @@ import type { TrendData } from '../models/repository';
 export async function handleTrend(
   request: RequestWithRepo,
   env: Env,
-  ctx: ExecutionContext
+  _ctx: ExecutionContext
 ): Promise<Response> {
   try {
     // Validate request method
@@ -89,7 +89,7 @@ export async function handleTrend(
 /**
  * Calculate comprehensive trend metrics
  */
-function calculateTrendMetrics(data: TrendData[], periodDays: number) {
+function calculateTrendMetrics(data: TrendData[], _periodDays: number) {
   if (data.length === 0) {
     return {
       summary: {
