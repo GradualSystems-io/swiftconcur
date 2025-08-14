@@ -41,6 +41,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install system dependencies (jq, bc, llvm)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq bc llvm || sudo apt-get install -y jq bc llvm-15 || true
+
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -248,6 +253,11 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
 
+      - name: Install jq and bc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq bc
+
       - name: Install dependencies
         run: |
           cd ${{ matrix.component }}
@@ -365,7 +375,7 @@ jobs:
           
           # Install required tools
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y postgresql-client jq
           
           # Verify database connection
           PGPASSWORD=postgres psql -h localhost -U postgres -d swiftconcur_test -c "SELECT 1;"
