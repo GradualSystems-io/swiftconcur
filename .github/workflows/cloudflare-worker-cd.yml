@@ -140,10 +140,7 @@ jobs:
           
           echo "$BUILD_INFO" > src/build-info.json
           
-          # Validate wrangler configuration
-          npx wrangler@latest validate
-          
-          # Build the worker (dry run to check for issues)
+          # Check wrangler configuration and validate with dry run
           npx wrangler@latest deploy --dry-run --env development
           
           # Create artifact name

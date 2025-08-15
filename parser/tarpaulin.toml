@@ -1,5 +1,4 @@
 # Tarpaulin configuration for SwiftConcur parser
-[tarpaulin]
 # Use LLVM engine for better accuracy
 engine = "llvm"
 

@@ -64,10 +64,10 @@ FROM node:${NODE_VERSION}-${DEBIAN_VERSION}-slim AS node-deps
 WORKDIR /app
 
 # Copy package files
-COPY scripts/package*.json ./
+COPY scripts/package.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production --no-audit --no-fund \
+RUN npm install --only=production --no-audit --no-fund \
     && npm cache clean --force
 
 # =============================================================================

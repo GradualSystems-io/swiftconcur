@@ -35,7 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       coverage: ${{ steps.coverage.outputs.coverage }}
-      test-results: ${{ steps.test.outputs.results }}
     
     steps:
       - uses: actions/checkout@v4
@@ -110,34 +109,10 @@ jobs:
           echo "🧪 Running Rust unit tests..."
           cd parser
           
-          # Run tests with libtest-json format for nextest
-          cargo nextest run --workspace --all-features --no-fail-fast \
-            --message-format libtest-json > ../test-results.json
+          # Run tests with nextest (no JSON parsing needed)
+          cargo nextest run --workspace --all-features --no-fail-fast
           
-          # Parse test results from nextest JSON output
-          if [ -f ../test-results.json ]; then
-            TOTAL_TESTS=$(grep '"type":"test"' ../test-results.json | wc -l)
-            PASSED_TESTS=$(grep -c '"event":"ok"' ../test-results.json || echo "0")
-            FAILED_TESTS=$(grep -c '"event":"failed"' ../test-results.json || echo "0")
-          else
-            # Fallback: run again and count manually
-            TOTAL_TESTS=0
-            PASSED_TESTS=0
-            FAILED_TESTS=0
-          fi
-          
-          echo "Total tests: $TOTAL_TESTS"
-          echo "Passed: $PASSED_TESTS"
-          echo "Failed: $FAILED_TESTS"
-          
-          echo "results={\"total\":$TOTAL_TESTS,\"passed\":$PASSED_TESTS,\"failed\":$FAILED_TESTS}" >> $GITHUB_OUTPUT
-          
-          if [ "$FAILED_TESTS" -gt 0 ]; then
-            echo "❌ $FAILED_TESTS test(s) failed"
-            exit 1
-          fi
-          
-          echo "✅ All $PASSED_TESTS tests passed"
+          echo "✅ Unit tests completed successfully"
 
       - name: Run integration tests
         run: |
@@ -227,7 +202,6 @@ jobs:
           name: rust-coverage-reports
           path: |
             coverage/
-            test-results.json
           retention-days: 30
 
       - name: Upload coverage to Codecov
@@ -497,7 +471,7 @@ jobs:
           
           ## Test Results Summary
           
-          $(echo '${{ needs.rust-tests.outputs.test-results }}' | jq -r '"- **Rust Tests**: \(.passed) passed, \(.failed) failed, \(.total) total"')
+          - **Rust Tests**: Completed successfully
           
           ## Quality Gates
           
