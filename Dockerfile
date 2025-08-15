@@ -73,7 +73,7 @@ RUN npm ci --only=production --no-audit --no-fund \
 # =============================================================================
 # Stage 4: Swift Runtime with Minimal Dependencies
 # =============================================================================
-FROM swift:${SWIFT_VERSION}-${DEBIAN_VERSION}-slim AS runtime
+FROM swift:${SWIFT_VERSION}-${DEBIAN_VERSION} AS runtime
 
 # Set build arguments for labels
 ARG BUILD_DATE

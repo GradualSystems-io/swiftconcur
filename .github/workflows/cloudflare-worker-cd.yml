@@ -29,7 +29,7 @@ on:
         type: boolean
 
 env:
-  NODE_VERSION: '18'
+  NODE_VERSION: '20'
   WORKER_NAME: 'swiftconcur-api'
 
 # Cancel previous runs on new commits

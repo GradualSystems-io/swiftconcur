@@ -110,17 +110,21 @@ jobs:
           echo "🧪 Running Rust unit tests..."
           cd parser
           
-          # Run tests with JSON output for parsing
+          # Run tests with libtest-json format for nextest
           cargo nextest run --workspace --all-features --no-fail-fast \
-            --message-format json > ../test-results.json
+            --message-format libtest-json > ../test-results.json
           
-          # Also run with human-readable output
-          cargo nextest run --workspace --all-features --no-fail-fast
-          
-          # Parse test results
-          TOTAL_TESTS=$(jq -r '.[] | select(.type == "suite") | .event.passed + .event.failed' ../test-results.json | head -1)
-          PASSED_TESTS=$(jq -r '.[] | select(.type == "suite") | .event.passed' ../test-results.json | head -1)
-          FAILED_TESTS=$(jq -r '.[] | select(.type == "suite") | .event.failed' ../test-results.json | head -1)
+          # Parse test results from nextest JSON output
+          if [ -f ../test-results.json ]; then
+            TOTAL_TESTS=$(grep '"type":"test"' ../test-results.json | wc -l)
+            PASSED_TESTS=$(grep -c '"event":"ok"' ../test-results.json || echo "0")
+            FAILED_TESTS=$(grep -c '"event":"failed"' ../test-results.json || echo "0")
+          else
+            # Fallback: run again and count manually
+            TOTAL_TESTS=0
+            PASSED_TESTS=0
+            FAILED_TESTS=0
+          fi
           
           echo "Total tests: $TOTAL_TESTS"
           echo "Passed: $PASSED_TESTS"
