@@ -1,5 +1,4 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use serde_json;
 use std::fs;
 use std::io::BufReader;
 use swiftconcur_parser::parser::{XcodeBuildParser, XcresultParser};

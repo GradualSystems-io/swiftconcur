@@ -145,11 +145,11 @@ jobs:
             VCS_REF=${{ github.sha }}
             VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
           cache-from: |
-            type=gha,scope=buildkit-${{ matrix.platform }}
-            type=registry,ref=${{ env.REGISTRY }}/${{ steps.repo.outputs.repo_name }}/${{ env.IMAGE_NAME }}:buildcache-${{ matrix.platform }}
+            type=gha,scope=buildkit-${{ strategy.job-index }}
+            type=registry,ref=${{ env.REGISTRY }}/${{ steps.repo.outputs.repo_name }}/${{ env.IMAGE_NAME }}:buildcache-${{ strategy.job-index }}
           cache-to: |
-            type=gha,mode=max,scope=buildkit-${{ matrix.platform }}
-            type=registry,ref=${{ env.REGISTRY }}/${{ steps.repo.outputs.repo_name }}/${{ env.IMAGE_NAME }}:buildcache-${{ matrix.platform }},mode=max
+            type=gha,mode=max,scope=buildkit-${{ strategy.job-index }}
+            type=registry,ref=${{ env.REGISTRY }}/${{ steps.repo.outputs.repo_name }}/${{ env.IMAGE_NAME }}:buildcache-${{ strategy.job-index }},mode=max
           outputs: type=image,name=${{ env.REGISTRY }}/${{ steps.repo.outputs.repo_name }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true
 
       - name: Export digest

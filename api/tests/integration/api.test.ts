@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { unstable_dev, UnstableDevWorker } from 'wrangler';
-import { createMockEnv } from '../setup';
+import { UnstableDevWorker } from 'wrangler';
 
 describe('API Integration Tests', () => {
   let worker: UnstableDevWorker;

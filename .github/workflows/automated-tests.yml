@@ -94,12 +94,13 @@ jobs:
         run: |
           echo "🔍 Running Clippy lints..."
           cd parser
-          cargo clippy --all-targets --all-features -- \
-            -D warnings \
+          cargo clippy --workspace --all-targets --all-features \
+            -- -D warnings \
             -D clippy::all \
             -A clippy::pedantic \
             -A clippy::module_name_repetitions \
-            -A clippy::missing_errors_doc
+            -A clippy::missing_errors_doc \
+            -A clippy::missing_panics_doc
           
           echo "✅ Clippy lints passed"
 

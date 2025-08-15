@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { WarningProcessor, WarningPayloadSchema } from '../../src/models/warning';
+import { describe, it, expect } from 'vitest';
+import { WarningProcessor } from '../../src/models/warning';
 
 describe('WarningProcessor', () => {
   describe('categorizeWarning', () => {
