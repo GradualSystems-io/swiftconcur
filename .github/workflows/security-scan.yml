@@ -54,13 +54,13 @@ jobs:
         run: |
           echo "🔍 Running Rust dependency security audit..."
           
-          cd parser
-          cargo audit --format json --output ../rust-audit.json || true
-          cargo audit --format human
+          # Run from root directory since Cargo.lock is there
+          cargo audit --json > rust-audit.json || true
+          cargo audit
           
           # Check for high/critical vulnerabilities
-          CRITICAL_COUNT=$(jq -r '.vulnerabilities.list | map(select(.advisory.severity == "critical")) | length' ../rust-audit.json 2>/dev/null || echo "0")
-          HIGH_COUNT=$(jq -r '.vulnerabilities.list | map(select(.advisory.severity == "high")) | length' ../rust-audit.json 2>/dev/null || echo "0")
+          CRITICAL_COUNT=$(jq -r '.vulnerabilities.list | map(select(.advisory.severity == "critical")) | length' rust-audit.json 2>/dev/null || echo "0")
+          HIGH_COUNT=$(jq -r '.vulnerabilities.list | map(select(.advisory.severity == "high")) | length' rust-audit.json 2>/dev/null || echo "0")
           
           echo "Critical vulnerabilities: $CRITICAL_COUNT"
           echo "High vulnerabilities: $HIGH_COUNT"
@@ -328,7 +328,9 @@ jobs:
             -A clippy::module_name_repetitions \
             -A clippy::missing_errors_doc \
             -A clippy::missing_panics_doc \
-            --json > ../clippy-results.json || true
+            -A clippy::multiple_crate_versions \
+            -A clippy::cargo_common_metadata \
+            --message-format=json > ../clippy-results.json || true
           
           # Parse clippy results
           if [ -f ../clippy-results.json ]; then
@@ -356,13 +358,25 @@ jobs:
             echo "✅ No unsafe code found"
           fi
 
+      - name: Check for JavaScript/TypeScript files
+        id: check_js_ts
+        run: |
+          if find . -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" | grep -q .; then
+            echo "has_js_ts=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_js_ts=false" >> $GITHUB_OUTPUT
+            echo "No JavaScript/TypeScript files found, skipping CodeQL analysis"
+          fi
+
       - name: Initialize CodeQL
+        if: steps.check_js_ts.outputs.has_js_ts == 'true'
         uses: github/codeql-action/init@v2
         with:
           languages: javascript, typescript
           # Only scan JS/TS files since CodeQL doesn't support Rust well yet
 
       - name: Perform CodeQL Analysis
+        if: steps.check_js_ts.outputs.has_js_ts == 'true'
         uses: github/codeql-action/analyze@v2
         with:
           category: "/language:javascript"
@@ -385,10 +399,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Docker Image
         run: |
           echo "🐳 Building Docker image for security scanning..."
-          docker build -t swiftconcur-security-test:${{ github.sha }} .
+          docker buildx build \
+            --load \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg VCS_REF=${{ github.sha }} \
+            --build-arg VERSION=security-test \
+            -t swiftconcur-security-test:${{ github.sha }} .
 
       - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@master

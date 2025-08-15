@@ -41,13 +41,25 @@ jobs:
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
       
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: |
+          cd parser
+          cargo fmt --all -- --check
       
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: |
+          cd parser
+          cargo clippy --workspace --all-targets --all-features \
+            -- -D warnings \
+            -D clippy::all \
+            -A clippy::pedantic \
+            -A clippy::module_name_repetitions \
+            -A clippy::missing_errors_doc \
+            -A clippy::missing_panics_doc
       
       - name: Run tests
-        run: cargo test --workspace
+        run: |
+          cd parser
+          cargo test --workspace
   
   build:
     name: Build Release Binaries

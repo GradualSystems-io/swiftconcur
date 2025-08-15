@@ -1,7 +1,14 @@
 [package]
 name = "cli"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "Command-line interface for SwiftConcur warning analysis"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/GradualSystems/swiftconcur"
+readme = "../README.md"
+keywords = ["swift", "concurrency", "cli", "xcode", "warnings"]
+categories = ["command-line-utilities", "development-tools"]
+authors = ["Gradual Systems <contact@gradualsystems.io>"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }

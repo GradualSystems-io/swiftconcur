@@ -1,4 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use serde_json;
 use std::fs;
 use std::io::BufReader;
 use swiftconcur_parser::parser::{XcodeBuildParser, XcresultParser};
@@ -13,21 +14,45 @@ fn load_test_data() -> (String, String, String, String) {
     let large_file = fs::read_to_string("tests/fixtures/xcresult_multiple_warnings.json")
         .expect("Failed to read large test file");
 
-    // Create a synthetic very large file for stress testing
-    let very_large_file = create_synthetic_large_input(&medium_file, 100);
+    // Create a synthetic very large file for stress testing (reduced for faster CI)
+    let very_large_file = create_synthetic_large_input(&medium_file, 10);
 
     (small_file, medium_file, large_file, very_large_file)
 }
 
 fn create_synthetic_large_input(base_content: &str, multiplier: usize) -> String {
-    let mut large_content = String::new();
-    for i in 0..multiplier {
-        // Modify line numbers to create unique warnings
-        let modified_content = base_content.replace("line\": 42", &format!("line\": {}", 42 + i));
-        large_content.push_str(&modified_content);
-        large_content.push('\n');
+    // Parse the base JSON to extract the warning objects
+    let parsed: serde_json::Value = serde_json::from_str(base_content)
+        .expect("Failed to parse base JSON");
+    
+    if let Some(values) = parsed["_values"].as_array() {
+        let mut new_values = Vec::new();
+        
+        // Replicate warnings with modified line numbers
+        for i in 0..multiplier {
+            for value in values {
+                let mut new_value = value.clone();
+                // Modify the URL to have different line numbers
+                if let Some(url) = new_value["documentLocationInCreatingWorkspace"]["url"]["_value"].as_str() {
+                    let modified_url = url.replace("StartingLineNumber=42", &format!("StartingLineNumber={}", 42 + i))
+                        .replace("EndingLineNumber=42", &format!("EndingLineNumber={}", 42 + i));
+                    new_value["documentLocationInCreatingWorkspace"]["url"]["_value"] = serde_json::Value::String(modified_url);
+                }
+                new_values.push(new_value);
+            }
+        }
+        
+        // Create new JSON structure
+        let synthetic_json = serde_json::json!({
+            "_type": parsed["_type"],
+            "_values": new_values
+        });
+        
+        serde_json::to_string_pretty(&synthetic_json).expect("Failed to serialize synthetic JSON")
+    } else {
+        // Fallback: just return the original content
+        base_content.to_string()
     }
-    large_content
 }
 
 fn bench_xcresult_parsing(c: &mut Criterion) {
@@ -71,11 +96,11 @@ fn bench_xcresult_parsing(c: &mut Criterion) {
 }
 
 fn bench_xcodebuild_parsing(c: &mut Criterion) {
-    // Create synthetic xcodebuild output for testing
+    // Create synthetic xcodebuild output for testing (reduced for faster CI)
     let small_output = create_xcodebuild_output(10);
-    let medium_output = create_xcodebuild_output(100);
-    let large_output = create_xcodebuild_output(1000);
-    let very_large_output = create_xcodebuild_output(5000);
+    let medium_output = create_xcodebuild_output(25);
+    let large_output = create_xcodebuild_output(50);
+    let very_large_output = create_xcodebuild_output(100);
 
     let mut group = c.benchmark_group("xcodebuild_parsing");
 

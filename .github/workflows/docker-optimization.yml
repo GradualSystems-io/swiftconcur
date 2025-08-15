@@ -127,11 +127,12 @@ jobs:
             org.opencontainers.image.vendor=Gradual Systems
 
       - name: Build optimized Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          push: false
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -144,7 +145,7 @@ jobs:
           cache-to: |
             type=gha,mode=max,scope=buildkit-${{ matrix.platform }}
             type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:buildcache-${{ matrix.platform }},mode=max
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true
 
       - name: Export digest
         run: |
@@ -228,9 +229,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: Pull and analyze image
         run: |
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:latest"
+          # Use the first available tag
+          IMAGE_NAME=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)
           
           echo "🔍 Docker Image Optimization Analysis"
           echo "====================================="
@@ -294,7 +307,8 @@ jobs:
           wget -q https://github.com/wagoodman/dive/releases/download/v0.11.0/dive_0.11.0_linux_amd64.deb
           sudo dpkg -i dive_0.11.0_linux_amd64.deb
           
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:latest"
+          # Use the first available tag from metadata
+          IMAGE_NAME=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)
           
           # Analyze with dive
           dive $IMAGE_NAME --ci --lowestEfficiency 0.95 --highestWastedBytes 50MB || echo "Image efficiency analysis completed"
@@ -304,7 +318,8 @@ jobs:
           echo "🔒 Security & Compliance Check"
           echo "=============================="
           
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:latest"
+          # Use the first available tag from metadata
+          IMAGE_NAME=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)
           
           # Check if running as non-root
           USER_ID=$(docker run --rm $IMAGE_NAME id -u)
@@ -351,12 +366,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract metadata for performance tests
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: Container startup performance test
         run: |
           echo "⚡ Container Performance Benchmark"
           echo "================================="
           
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:latest"
+          # Use the first available tag from metadata
+          IMAGE_NAME=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)
           
           # Pull image and measure time
           echo "📥 Image pull performance:"
@@ -420,10 +447,37 @@ jobs:
           echo "🎯 Runtime Performance Test"
           echo "=========================="
           
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:latest"
+          # Use the first available tag from metadata
+          IMAGE_NAME=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)
           
-          # Create test file
-          echo '{"warnings": [{"message": "test warning", "file": "test.swift", "line": 1}]}' > test-input.json
+          # Create test file with xcresult format structure
+          cat > test-input.json << 'EOF'
+          {
+            "_type": {
+              "_name": "ActionResult"
+            },
+            "issues": {
+              "_values": [
+                {
+                  "issueType": {
+                    "_name": "Warning"
+                  },
+                  "message": {
+                    "_value": "Actor-isolated property 'value' can not be mutated from the main actor"
+                  },
+                  "documentLocationInCreatingWorkspace": {
+                    "url": {
+                      "_value": "file:///test.swift"
+                    },
+                    "concreteTypeName": {
+                      "_value": "DVTTextDocumentLocation"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+          EOF
           
           # Runtime performance test
           echo "Testing SwiftConcur parser performance..."
@@ -434,7 +488,7 @@ jobs:
             start_time=$(date +%s%N)
             
             docker run --rm -v $(pwd)/test-input.json:/input.json $IMAGE_NAME \
-              /usr/local/bin/swiftconcur --format json /input.json >/dev/null 2>&1 || true
+              /usr/local/bin/swiftconcur -f /input.json --format json >/dev/null 2>&1 || true
             
             end_time=$(date +%s%N)
             runtime=$((end_time - start_time))

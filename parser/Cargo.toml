@@ -2,6 +2,13 @@
 name = "swiftconcur-parser"
 version = "0.1.0"
 edition = "2021"
+description = "Swift concurrency warning detection and analysis library"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/GradualSystems/swiftconcur"
+readme = "../README.md"
+keywords = ["swift", "concurrency", "warnings", "xcode", "ci"]
+categories = ["development-tools", "parsing", "command-line-utilities"]
+authors = ["Gradual Systems <contact@gradualsystems.io>"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive", "env"] }

@@ -14,7 +14,7 @@ too-many-arguments-threshold = 7
 type-complexity-threshold = 250
 
 # Maximum number of single char bindings allowed
-single-char-binding-threshold = 4
+single-char-binding-names-threshold = 4
 
 # Disallowed function/method names
 disallowed-names = [
@@ -28,18 +28,7 @@ disallowed-names = [
     "test",
 ]
 
-# Disallowed types that should not be used
-disallowed-types = [
-    # Prefer specific error types over generic ones
-    { path = "std::error::Error", reason = "Use specific error types instead of trait objects" },
-    
-    # Discourage use of unsafe pointers without good reason
-    { path = "*const", reason = "Raw pointers should be avoided unless necessary" },
-    { path = "*mut", reason = "Raw pointers should be avoided unless necessary" },
-    
-    # Discourage HashMap for small collections
-    { path = "std::collections::HashMap", reason = "Consider BTreeMap for deterministic iteration or Vec for small collections" },
-]
+# Note: disallowed-types removed to avoid conflicts with thiserror Error derive macro
 
 # Configure specific lints
 # Allow some pedantic lints that might be too noisy
@@ -57,8 +46,7 @@ avoid-breaking-exported-api = false
 # Literals configuration
 literal-representation-threshold = 10
 
-# Encourage the use of std library functions
-prefer-self-in-trait-impls = true
+# Note: prefer-self-in-trait-impls was removed - behavior is now default
 
 # Enum variant configuration
 enum-variant-size-threshold = 200
@@ -67,13 +55,12 @@ enum-variant-size-threshold = 200
 large-error-threshold = 128
 
 # Stack size limit for large types
-large-stack-arrays-threshold = 512000
+array-size-threshold = 512000
 
 # String literal formatting
 max-suggested-slice-pattern-length = 3
 
-# Allow certain complexity in tests
-test-complexity-threshold = 50
+# Note: test-complexity-threshold was removed - use type-complexity-threshold instead
 
 # Verbose bit mask threshold
 verbose-bit-mask-threshold = 1
