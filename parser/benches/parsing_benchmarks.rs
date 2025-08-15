@@ -22,32 +22,42 @@ fn load_test_data() -> (String, String, String, String) {
 
 fn create_synthetic_large_input(base_content: &str, multiplier: usize) -> String {
     // Parse the base JSON to extract the warning objects
-    let parsed: serde_json::Value = serde_json::from_str(base_content)
-        .expect("Failed to parse base JSON");
-    
+    let parsed: serde_json::Value =
+        serde_json::from_str(base_content).expect("Failed to parse base JSON");
+
     if let Some(values) = parsed["_values"].as_array() {
         let mut new_values = Vec::new();
-        
+
         // Replicate warnings with modified line numbers
         for i in 0..multiplier {
             for value in values {
                 let mut new_value = value.clone();
                 // Modify the URL to have different line numbers
-                if let Some(url) = new_value["documentLocationInCreatingWorkspace"]["url"]["_value"].as_str() {
-                    let modified_url = url.replace("StartingLineNumber=42", &format!("StartingLineNumber={}", 42 + i))
-                        .replace("EndingLineNumber=42", &format!("EndingLineNumber={}", 42 + i));
-                    new_value["documentLocationInCreatingWorkspace"]["url"]["_value"] = serde_json::Value::String(modified_url);
+                if let Some(url) =
+                    new_value["documentLocationInCreatingWorkspace"]["url"]["_value"].as_str()
+                {
+                    let modified_url = url
+                        .replace(
+                            "StartingLineNumber=42",
+                            &format!("StartingLineNumber={}", 42 + i),
+                        )
+                        .replace(
+                            "EndingLineNumber=42",
+                            &format!("EndingLineNumber={}", 42 + i),
+                        );
+                    new_value["documentLocationInCreatingWorkspace"]["url"]["_value"] =
+                        serde_json::Value::String(modified_url);
                 }
                 new_values.push(new_value);
             }
         }
-        
+
         // Create new JSON structure
         let synthetic_json = serde_json::json!({
             "_type": parsed["_type"],
             "_values": new_values
         });
-        
+
         serde_json::to_string_pretty(&synthetic_json).expect("Failed to serialize synthetic JSON")
     } else {
         // Fallback: just return the original content

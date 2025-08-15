@@ -95,7 +95,7 @@ jobs:
 
       - name: Check formatting
         run: |
-          cd parser
+          echo "🔍 Checking Rust code formatting..."
           cargo fmt --all -- --check
 
       - name: Run clippy with detailed output

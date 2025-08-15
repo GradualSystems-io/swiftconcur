@@ -1,4 +1,4 @@
-use clap::{Parser, arg};
+use clap::{arg, Parser};
 use color_eyre::eyre::Result;
 use std::{fs, path::PathBuf};
 use swiftconcur_parser::find_concurrency_warnings;
