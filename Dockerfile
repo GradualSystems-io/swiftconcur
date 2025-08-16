@@ -31,14 +31,12 @@ WORKDIR /build
 # Copy dependency manifests for better caching
 COPY parser/Cargo.toml parser/Cargo.lock* ./
 
-# Create dummy main.rs to cache dependencies
+# Create dummy main.rs and benchmark files to cache dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-
-# Temporarily remove benchmark configuration from Cargo.toml to avoid path issues during dependency caching
-RUN sed -i '/\[\[bench\]\]/,/harness = false/d' Cargo.toml
+RUN mkdir -p benches && echo "fn main() {}" > benches/parsing_benchmarks.rs
 
 # Build dependencies only (cached layer)
-RUN cargo build --release --locked --bins --lib && rm src/main.rs
+RUN cargo build --release --locked --bins --lib && rm src/main.rs && rm -rf benches
 
 # =============================================================================
 # Stage 2: Rust Application Builder
