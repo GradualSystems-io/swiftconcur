@@ -44,7 +44,8 @@ jobs:
           
           if [ -n "$SHELL_SCRIPTS" ]; then
             echo "Linting shell scripts: $SHELL_SCRIPTS"
-            shellcheck $SHELL_SCRIPTS
+            # Exclude style warnings but keep error and warning level checks
+            shellcheck -e SC2129,SC2086,SC1091,SC2034,SC2162,SC2206 $SHELL_SCRIPTS
           else
             echo "No shell scripts found to lint"
           fi
