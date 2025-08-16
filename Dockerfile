@@ -3,7 +3,7 @@
 # =============================================================================
 
 # Pinned versions for reproducible builds
-ARG RUST_VERSION=1.78.0
+ARG RUST_VERSION=1.80.0
 ARG SWIFT_VERSION=5.10.1
 ARG NODE_VERSION=20.15.1
 ARG DEBIAN_VERSION=bookworm
