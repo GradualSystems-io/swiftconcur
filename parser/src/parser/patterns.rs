@@ -6,32 +6,32 @@ lazy_static! {
     // Actor isolation patterns - covers various forms of actor isolation violations
     pub static ref ACTOR_ISOLATION: Regex = Regex::new(
         r"(?i)(actor-isolated\s+(property|method|function|instance|var|let|subscript).*?(can\s*not|cannot)\s+be\s+(referenced|accessed|called|mutated))|(\w+.*is\s+actor-isolated)"
-    ).unwrap();
+    ).expect("ACTOR_ISOLATION regex pattern is valid");
 
     // Sendable conformance patterns
     pub static ref SENDABLE_CONFORMANCE: Regex = Regex::new(
         r"(?i)(type\s+'[^']+'\s+does\s+not\s+conform\s+to.*sendable)|(capture.*requires.*sendable)|(.*non-sendable.*)"
-    ).unwrap();
+    ).expect("SENDABLE_CONFORMANCE regex pattern is valid");
 
     // Data race patterns
     pub static ref DATA_RACE: Regex = Regex::new(
         r"(?i)(data\s+race|race\s+condition|concurrent\s+access|mutation\s+of\s+captured\s+var)"
-    ).unwrap();
+    ).expect("DATA_RACE regex pattern is valid");
 
     // Performance/concurrency overhead patterns
     pub static ref PERFORMANCE: Regex = Regex::new(
         r"(?i)(performance.*concurrency|async.*overhead|potential\s+deadlock|excessive\s+await)"
-    ).unwrap();
+    ).expect("PERFORMANCE regex pattern is valid");
 
     // Task-related warnings
     pub static ref TASK_WARNINGS: Regex = Regex::new(
         r"(?i)(task.*cancelled|task.*leaked|detached\s+task)"
-    ).unwrap();
+    ).expect("TASK_WARNINGS regex pattern is valid");
 
     // MainActor related warnings
     pub static ref MAIN_ACTOR: Regex = Regex::new(
         r"(?i)(main\s+actor.*isolation|call\s+to\s+main\s+actor|main\s+actor.*unsafe)"
-    ).unwrap();
+    ).expect("MAIN_ACTOR regex pattern is valid");
 }
 
 pub fn categorize_warning(message: &str) -> (WarningType, Severity) {
@@ -79,7 +79,7 @@ mod tests {
 
         for (i, message) in messages.iter().enumerate() {
             let (warning_type, severity) = categorize_warning(message);
-            println!("Message {i}: {message} -> {warning_type:?}");
+            eprintln!("Message {i}: {message} -> {warning_type:?}");
             assert_eq!(
                 warning_type,
                 WarningType::ActorIsolation,

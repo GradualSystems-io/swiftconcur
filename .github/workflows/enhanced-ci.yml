@@ -229,6 +229,10 @@ jobs:
     name: Build & Test GitHub Action
     runs-on: ubuntu-latest
     needs: [code-quality, test-suite]
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
 
