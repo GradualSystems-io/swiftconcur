@@ -29,14 +29,14 @@ RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 WORKDIR /build
 
 # Copy dependency manifests for better caching
-COPY parser/Cargo.toml parser/Cargo.lock* ./
+COPY parser/Cargo.toml ./
 
 # Create dummy main.rs and benchmark files to cache dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN mkdir -p benches && echo "fn main() {}" > benches/parsing_benchmarks.rs
 
-# Build dependencies only (cached layer)
-RUN cargo build --release --locked --bins --lib && rm src/main.rs && rm -rf benches
+# Build dependencies only (cached layer) - no lock file exists, so don't use --locked
+RUN cargo build --release --bins --lib && rm src/main.rs && rm -rf benches
 
 # =============================================================================
 # Stage 2: Rust Application Builder
@@ -44,7 +44,7 @@ RUN cargo build --release --locked --bins --lib && rm src/main.rs && rm -rf benc
 FROM deps-cache AS rust-builder
 
 # Copy the original Cargo.toml with benchmarks and source code
-COPY parser/Cargo.toml parser/Cargo.lock* ./
+COPY parser/Cargo.toml ./
 COPY parser/src ./src
 COPY parser/benches ./benches
 
@@ -53,7 +53,7 @@ ENV CARGO_INCREMENTAL=0 \
     CARGO_NET_RETRY=10 \
     RUSTFLAGS="-C link-arg=-s"
 
-RUN cargo build --release --locked --offline
+RUN cargo build --release --offline
 
 # Strip binary to reduce size
 RUN strip target/release/swiftconcur-parser
