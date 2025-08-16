@@ -118,15 +118,30 @@ jobs:
           
           cargo deny check || echo "Deny check completed with warnings"
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
       - name: Node.js Dependency Audit (Dashboard)
         run: |
           if [ -d "dashboard" ]; then
             echo "🔍 Running Node.js dependency audit for dashboard..."
             cd dashboard
             
-            # Run npm audit
-            npm audit --audit-level high --json > ../node-audit.json || true
-            npm audit --audit-level high
+            # Install dependencies first
+            if [ -f "package.json" ]; then
+              echo "Installing dependencies..."
+              npm ci || npm install
+              
+              # Run npm audit
+              npm audit --audit-level high --json > ../node-audit.json || true
+              npm audit --audit-level high
+            else
+              echo "No package.json found in dashboard"
+            fi
             
             # Parse results
             if [ -f ../node-audit.json ]; then
@@ -148,9 +163,17 @@ jobs:
             echo "🔍 Running Node.js dependency audit for API..."
             cd api
             
-            # Run npm audit
-            npm audit --audit-level high --json > ../api-audit.json || true
-            npm audit --audit-level high
+            # Install dependencies first
+            if [ -f "package.json" ]; then
+              echo "Installing dependencies..."
+              npm ci || npm install
+              
+              # Run npm audit
+              npm audit --audit-level high --json > ../api-audit.json || true
+              npm audit --audit-level high
+            else
+              echo "No package.json found in api"
+            fi
             
             # Parse results
             if [ -f ../api-audit.json ]; then
@@ -370,14 +393,14 @@ jobs:
 
       - name: Initialize CodeQL
         if: steps.check_js_ts.outputs.has_js_ts == 'true'
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
           languages: javascript, typescript
           # Only scan JS/TS files since CodeQL doesn't support Rust well yet
 
       - name: Perform CodeQL Analysis
         if: steps.check_js_ts.outputs.has_js_ts == 'true'
-        uses: github/codeql-action/analyze@v2
+        uses: github/codeql-action/analyze@v3
         with:
           category: "/language:javascript"
 
@@ -420,7 +443,7 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Upload Trivy Results to Security Tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'

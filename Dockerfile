@@ -34,7 +34,10 @@ COPY parser/Cargo.toml parser/Cargo.lock* ./
 # Create dummy main.rs to cache dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
-# Build dependencies only (cached layer) - exclude benches since source files aren't available yet
+# Temporarily remove benchmark configuration from Cargo.toml to avoid path issues during dependency caching
+RUN sed -i '/\[\[bench\]\]/,/harness = false/d' Cargo.toml
+
+# Build dependencies only (cached layer)
 RUN cargo build --release --locked --bins --lib && rm src/main.rs
 
 # =============================================================================
@@ -42,8 +45,10 @@ RUN cargo build --release --locked --bins --lib && rm src/main.rs
 # =============================================================================
 FROM deps-cache AS rust-builder
 
-# Copy source code
+# Copy the original Cargo.toml with benchmarks and source code
+COPY parser/Cargo.toml parser/Cargo.lock* ./
 COPY parser/src ./src
+COPY parser/benches ./benches
 
 # Build the application with optimizations
 ENV CARGO_INCREMENTAL=0 \
@@ -94,9 +99,9 @@ LABEL maintainer="SwiftConcur Team" \
 # Install only essential runtime dependencies
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
-    curl=7.88.1-10+deb12u* \
-    jq=1.6-2.1 \
-    git=1:2.39.2-1.1 \
+    curl \
+    jq \
+    git \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
@@ -104,7 +109,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install Node.js with specific version pinning
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs=${NODE_VERSION}* \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
