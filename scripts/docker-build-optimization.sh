@@ -312,8 +312,8 @@ analyze_image() {
     log_info "Analyzing Docker image..."
     
     # Get image information
-    IMAGE_SIZE=$(docker images --format "table {{.Size}}" $IMAGE_NAME:latest | tail -n +2)
-    IMAGE_ID=$(docker images --format "table {{.ID}}" $IMAGE_NAME:latest | tail -n +2)
+    IMAGE_SIZE=$(docker images --format "table {{.Size}}" "$IMAGE_NAME":latest | tail -n +2)
+    IMAGE_ID=$(docker images --format "table {{.ID}}" "$IMAGE_NAME":latest | tail -n +2)
     
     echo ""
     echo "📊 Image Analysis Results"
@@ -325,12 +325,12 @@ analyze_image() {
     
     # Layer analysis
     echo "📋 Layer Breakdown:"
-    docker history $IMAGE_NAME:latest --human=true --format "table {{.CreatedBy}}\t{{.Size}}" | head -15
+    docker history "$IMAGE_NAME":latest --human=true --format "table {{.CreatedBy}}\t{{.Size}}" | head -15
     echo ""
     
     # Find inefficiencies
     echo "🔍 Optimization Opportunities:"
-    LARGE_LAYERS=$(docker history $IMAGE_NAME:latest --human=true --format "{{.Size}}\t{{.CreatedBy}}" | \
+    LARGE_LAYERS=$(docker history "$IMAGE_NAME":latest --human=true --format "{{.Size}}\t{{.CreatedBy}}" | \
         awk '$1 ~ /[0-9]+MB/ && $1+0 > 50 {print "  • Large layer (" $1 "): " substr($0, index($0,$2))}')
     
     if [ -n "$LARGE_LAYERS" ]; then
@@ -368,10 +368,10 @@ benchmark_performance() {
     for i in {1..3}; do
         start_time=$(date +%s%N)
         
-        CONTAINER_ID=$(docker run -d $IMAGE_NAME:latest sleep 5)
+        CONTAINER_ID=$(docker run -d "$IMAGE_NAME":latest sleep 5)
         
         # Wait for container to be running
-        while [ "$(docker inspect -f '{{.State.Running}}' $CONTAINER_ID)" != "true" ]; do
+        while [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_ID")" != "true" ]; do
             sleep 0.01
         done
         
@@ -382,8 +382,8 @@ benchmark_performance() {
         echo "  • Test $i: ${startup_time}ms"
         
         # Cleanup
-        docker stop $CONTAINER_ID >/dev/null 2>&1
-        docker rm $CONTAINER_ID >/dev/null 2>&1
+        docker stop "$CONTAINER_ID" >/dev/null 2>&1
+        docker rm "$CONTAINER_ID" >/dev/null 2>&1
     done
     
     # Calculate average
@@ -398,10 +398,10 @@ benchmark_performance() {
     # Image pull time
     echo ""
     echo "📥 Image Pull Time:"
-    docker rmi $IMAGE_NAME:latest >/dev/null 2>&1 || true
+    docker rmi "$IMAGE_NAME":latest >/dev/null 2>&1 || true
     
     start_time=$(date +%s)
-    docker pull $IMAGE_NAME:latest >/dev/null 2>&1 || docker build -t $IMAGE_NAME:latest . >/dev/null 2>&1
+    docker pull "$IMAGE_NAME":latest >/dev/null 2>&1 || docker build -t "$IMAGE_NAME":latest . >/dev/null 2>&1
     end_time=$(date +%s)
     
     pull_time=$((end_time - start_time))
@@ -423,7 +423,7 @@ security_scan() {
     echo "======================="
     
     # Check if running as non-root
-    USER_ID=$(docker run --rm $IMAGE_NAME:latest id -u 2>/dev/null || echo "unknown")
+    USER_ID=$(docker run --rm "$IMAGE_NAME":latest id -u 2>/dev/null || echo "unknown")
     if [ "$USER_ID" != "0" ] && [ "$USER_ID" != "unknown" ]; then
         echo "✅ Running as non-root user (UID: $USER_ID)"
     else
@@ -435,7 +435,7 @@ security_scan() {
     echo "🛡️ Basic Security Posture:"
     
     # Check for shell
-    if docker run --rm $IMAGE_NAME:latest which sh >/dev/null 2>&1; then
+    if docker run --rm "$IMAGE_NAME":latest which sh >/dev/null 2>&1; then
         echo "⚠️ Shell available in image"
     else
         echo "✅ No shell - reduced attack surface"
@@ -443,7 +443,7 @@ security_scan() {
     
     # Check for package managers
     for cmd in apt-get yum dnf apk; do
-        if docker run --rm $IMAGE_NAME:latest which $cmd >/dev/null 2>&1; then
+        if docker run --rm "$IMAGE_NAME":latest which "$cmd" >/dev/null 2>&1; then
             echo "⚠️ Package manager '$cmd' found"
         fi
     done
@@ -468,7 +468,7 @@ generate_build_report() {
 
 ## 📊 Build Summary
 
-$(docker images $IMAGE_NAME:latest --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}\t{{.Size}}")
+$(docker images "$IMAGE_NAME":latest --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}\t{{.Size}}")
 
 ## 🏗️ Optimization Features
 
@@ -483,7 +483,7 @@ $(docker images $IMAGE_NAME:latest --format "table {{.Repository}}\t{{.Tag}}\t{{
 ## 📋 Layer Analysis
 
 \`\`\`
-$(docker history $IMAGE_NAME:latest --human=true --format "table {{.CreatedBy}}\t{{.Size}}" | head -10)
+$(docker history "$IMAGE_NAME":latest --human=true --format "table {{.CreatedBy}}\t{{.Size}}" | head -10)
 \`\`\`
 
 ## 🎯 Recommendations
@@ -491,7 +491,7 @@ $(docker history $IMAGE_NAME:latest --human=true --format "table {{.CreatedBy}}\
 EOF
 
     # Add conditional recommendations
-    IMAGE_SIZE_MB=$(docker inspect $IMAGE_NAME:latest --format='{{.Size}}' | awk '{print int($1/1024/1024)}')
+    IMAGE_SIZE_MB=$(docker inspect "$IMAGE_NAME":latest --format='{{.Size}}' | awk '{print int($1/1024/1024)}')
     
     if [ $IMAGE_SIZE_MB -lt 100 ]; then
         echo "- ✅ Image size is excellent (<100MB)" >> "$REPORT_FILE"
@@ -535,7 +535,7 @@ main() {
     echo "  • Image: $IMAGE_NAME:latest"
     echo "  • Mode: $BUILD_MODE"
     echo "  • Platform: $PLATFORM"
-    echo "  • Size: $(docker images --format '{{.Size}}' $IMAGE_NAME:latest)"
+    echo "  • Size: $(docker images --format '{{.Size}}' "$IMAGE_NAME":latest)"
     echo ""
     echo "📁 Files Generated:"
     echo "  • Build report: docker-build-report.md"

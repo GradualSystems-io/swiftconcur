@@ -173,7 +173,7 @@ run_dashboard_tests() {
     
     # Run tests
     log_info "Running dashboard tests..."
-    eval $TEST_CMD
+    eval "$TEST_CMD"
     
     # Check coverage if generated
     if [ "$COVERAGE" = true ] && [ -f "coverage/coverage-summary.json" ]; then
@@ -233,7 +233,7 @@ run_api_tests() {
     
     # Run tests
     log_info "Running API tests..."
-    eval $TEST_CMD
+    eval "$TEST_CMD"
     
     # Check coverage if generated
     if [ "$COVERAGE" = true ] && [ -f "coverage/coverage-summary.json" ]; then
