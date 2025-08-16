@@ -34,8 +34,8 @@ COPY parser/Cargo.toml parser/Cargo.lock* ./
 # Create dummy main.rs to cache dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
-# Build dependencies only (cached layer)
-RUN cargo build --release --locked && rm src/main.rs
+# Build dependencies only (cached layer) - exclude benches since source files aren't available yet
+RUN cargo build --release --locked --bins --lib && rm src/main.rs
 
 # =============================================================================
 # Stage 2: Rust Application Builder

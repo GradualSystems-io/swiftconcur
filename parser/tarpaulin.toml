@@ -1,6 +1,5 @@
 # Tarpaulin configuration for SwiftConcur parser
-# Use LLVM engine for better accuracy
-engine = "llvm"
+# Note: engine is specified via command line argument
 
 # Output formats
 out = ["Html", "Xml", "Json"]
