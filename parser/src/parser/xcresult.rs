@@ -62,8 +62,16 @@ impl XcresultParser {
             // Parse file path and line number from URL
             let url = &issue.document_location.url.value;
             if let Some(captures) = URL_PARSER.captures(url) {
-                let file_path = captures.name("path").expect("path capture group should exist").as_str();
-                let line_number: u32 = captures.name("line").expect("line capture group should exist").as_str().parse().unwrap_or(0);
+                let file_path = captures
+                    .name("path")
+                    .expect("path capture group should exist")
+                    .as_str();
+                let line_number: u32 = captures
+                    .name("line")
+                    .expect("line capture group should exist")
+                    .as_str()
+                    .parse()
+                    .unwrap_or(0);
 
                 let message = &issue.message.value;
                 let (warning_type, severity) = categorize_warning(message);
