@@ -381,7 +381,6 @@ jobs:
           cargo nextest run \
             --workspace \
             --all-features \
-            --profile ci \
             --verbose \
             --no-fail-fast
 
