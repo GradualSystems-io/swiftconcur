@@ -1,3 +1,18 @@
+//! SwiftConcur Parser - A Rust library for parsing and analyzing Swift concurrency warnings
+//!
+//! This library provides comprehensive parsing capabilities for Xcode build output and xcresult files,
+//! extracting concurrency-related warnings including actor isolation violations, Sendable conformance
+//! issues, data races, and performance concerns related to Swift's modern concurrency features.
+//!
+//! # Features
+//!
+//! - Parse xcodebuild text output and xcresult JSON files
+//! - Categorize warnings by type (actor isolation, Sendable conformance, data races, etc.)
+//! - Extract code context around warnings for better analysis
+//! - Multiple output formats (JSON, Markdown, Slack)
+//! - Configurable filtering and thresholds
+//! - Performance benchmarking for regression detection
+
 pub mod cli;
 pub mod error;
 pub mod formatters;

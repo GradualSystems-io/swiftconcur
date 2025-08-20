@@ -1,3 +1,8 @@
+//! SwiftConcur CLI - A command-line tool for analyzing Swift concurrency warnings
+//! 
+//! This tool parses Xcode build output to identify and extract concurrency-related warnings,
+//! helping developers identify potential issues with Swift's async/await, actors, and Sendable types.
+
 use clap::{arg, Parser};
 use color_eyre::eyre::Result;
 use std::{fs, path::PathBuf};
