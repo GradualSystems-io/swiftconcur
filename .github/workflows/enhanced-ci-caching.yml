@@ -574,11 +574,14 @@ jobs:
           echo "⚡ Benchmark results generated successfully"
           echo "📊 Benchmark results stored in bench-results.txt"
           echo "⚠️ Skipping GitHub Pages push (gh-pages branch not configured)"
+          echo "🔄 Updated workflow - no more benchmark-action dependency"
           
           # Display some benchmark results for logging
           if [ -f ../bench-results.txt ]; then
             echo "📋 Sample benchmark results:"
             head -n 10 ../bench-results.txt || true
+          else
+            echo "📋 No benchmark results file found"
           fi
 
   cache-analysis:
