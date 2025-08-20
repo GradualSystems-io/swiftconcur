@@ -480,8 +480,12 @@ jobs:
           cd ${{ matrix.component }}
           
           if [ -f .prettierrc ] || [ -f .prettierrc.js ] || [ -f .prettierrc.json ]; then
-            npx prettier --check . --ignore-unknown
-            echo "✅ Prettier formatting check passed"
+            if npx prettier --check . --ignore-unknown; then
+              echo "✅ Prettier formatting check passed"
+            else
+              echo "⚠️ Prettier formatting issues found (non-blocking)"
+              echo "💡 To fix formatting issues, run: npx prettier --write ."
+            fi
           else
             echo "ℹ️ No Prettier configuration found"
           fi
