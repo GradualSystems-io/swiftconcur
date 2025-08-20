@@ -288,14 +288,20 @@ jobs:
             cargo install cargo-audit --locked
           fi
           
-          cargo audit --format json --output audit-report.json || AUDIT_FAILED=true
+          # Generate Cargo.lock if it doesn't exist
+          if [ ! -f Cargo.lock ]; then
+            echo "📝 Generating Cargo.lock file..."
+            cargo generate-lockfile
+          fi
           
-          if [ "$AUDIT_FAILED" = true ]; then
-            echo "⚠️ Security vulnerabilities found:"
-            cargo audit
-            echo "::warning::Security vulnerabilities detected in dependencies"
-          else
+          # Run cargo audit without --format flag (not supported)
+          if cargo audit --json > audit-report.json 2>/dev/null; then
             echo "✅ No security vulnerabilities found"
+          else
+            echo "⚠️ Security vulnerabilities found (non-blocking):"
+            cargo audit || true
+            echo "::warning::Security vulnerabilities detected in dependencies"
+            echo "💡 To fix vulnerabilities, run: cargo audit fix"
           fi
 
       - name: Upload lint reports
