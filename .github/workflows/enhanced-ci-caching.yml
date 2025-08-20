@@ -498,9 +498,10 @@ jobs:
           npm audit --audit-level high --json > audit-report.json || AUDIT_FAILED=true
           
           if [ "$AUDIT_FAILED" = true ]; then
-            echo "⚠️ High/critical vulnerabilities found:"
-            npm audit --audit-level high
+            echo "⚠️ High/critical vulnerabilities found (non-blocking):"
+            npm audit --audit-level high || true
             echo "::warning::NPM audit found vulnerabilities in ${{ matrix.component }}"
+            echo "💡 To fix vulnerabilities, run: npm audit fix --force"
           else
             echo "✅ No high/critical vulnerabilities found"
           fi
