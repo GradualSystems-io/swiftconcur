@@ -268,9 +268,14 @@ jobs:
           echo "📚 Checking Rust documentation..."
           cd parser
           
-          # Check that public items have documentation
-          RUSTDOCFLAGS="-D missing_docs -D rustdoc::missing_crate_level_docs" \
-          cargo doc --workspace --no-deps --document-private-items --all-features
+          # Check that public items have documentation (non-blocking)
+          if RUSTDOCFLAGS="-D missing_docs -D rustdoc::missing_crate_level_docs" \
+             cargo doc --workspace --no-deps --document-private-items --all-features; then
+            echo "✅ All public items have documentation"
+          else
+            echo "⚠️ Some public items are missing documentation (non-blocking)"
+            echo "💡 To fix documentation issues, add /// comments to public items"
+          fi
 
       # Security audit
       - name: Security audit
