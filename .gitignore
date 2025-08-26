@@ -39,3 +39,5 @@ instructions/.DS_Store
 /dashboard/yarn-error.log*
 dashboard/.env.local
 instructions/.DS_Store
+/api/coverage
+/dashboard/coverage
