@@ -56,8 +56,17 @@ fi
 
 XCODEBUILD_CMD="$XCODEBUILD_CMD -scheme $SCHEME -configuration $CONFIGURATION"
 
-# Add JSON output format
-XCODEBUILD_CMD="$XCODEBUILD_CMD -resultBundleFormat JSON clean build"
+# Ensure we produce a result bundle for structured parsing
+RESULT_BUNDLE_PATH=""
+if echo "$INPUT_XCODEBUILD_ARGS" | grep -q -- "-resultBundlePath"; then
+    RESULT_BUNDLE_PATH=$(echo "$INPUT_XCODEBUILD_ARGS" | sed -n 's/.*-resultBundlePath[[:space:]]\([^[:space:]]\+\).*/\1/p')
+else
+    RESULT_BUNDLE_PATH="build.xcresult"
+    XCODEBUILD_CMD="$XCODEBUILD_CMD -resultBundlePath $RESULT_BUNDLE_PATH"
+fi
+
+# Append build action
+XCODEBUILD_CMD="$XCODEBUILD_CMD clean build"
 
 # Append extra xcodebuild args if provided
 if [ -n "$INPUT_XCODEBUILD_ARGS" ]; then
@@ -66,6 +75,7 @@ fi
 
 # Create temporary directory for outputs
 OUTPUT_DIR=$(mktemp -d)
+LOG_OUTPUT="$OUTPUT_DIR/xcodebuild.log"
 JSON_OUTPUT="$OUTPUT_DIR/xcodebuild.json"
 PARSED_OUTPUT="$OUTPUT_DIR/warnings.json"
 MARKDOWN_OUTPUT="$OUTPUT_DIR/summary.md"
@@ -77,7 +87,7 @@ echo "Command: $XCODEBUILD_CMD"
 START_TS=$(date +%s)
 
 # Run xcodebuild and capture output
-if ! $XCODEBUILD_CMD 2>&1 | tee "$JSON_OUTPUT"; then
+if ! eval "$XCODEBUILD_CMD" 2>&1 | tee "$LOG_OUTPUT"; then
     echo -e "${RED}❌ Build failed${NC}"
     exit 1
 fi
@@ -105,6 +115,19 @@ BUILD_TIME_HUMAN=$(format_duration "$BUILD_TIME_SECONDS")
 
 # Parse warnings
 echo -e "${YELLOW}🔍 Parsing warnings...${NC}"
+
+# If we have an xcresult bundle, extract warnings JSON via xcresulttool
+if [ -d "$RESULT_BUNDLE_PATH" ]; then
+  if command -v xcrun >/dev/null 2>&1; then
+    xcrun xcresulttool get object --path "$RESULT_BUNDLE_PATH" --format json --legacy \
+      | jq '.actions._values[0].buildResult.issues.warningSummaries' > "$JSON_OUTPUT" || echo '{"_values":[]}' > "$JSON_OUTPUT"
+  else
+    echo '{"_values":[]}' > "$JSON_OUTPUT"
+  fi
+else
+  # Fallback to build log as input (parser will try to interpret lines)
+  cp "$LOG_OUTPUT" "$JSON_OUTPUT"
+fi
 
 # Detect parser binary name
 SWIFTPARSE_BIN="${SWIFTPARSE_BIN:-swiftconcur}"
