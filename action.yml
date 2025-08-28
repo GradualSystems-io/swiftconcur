@@ -110,8 +110,8 @@ runs:
       shell: bash
       run: |
         set -e
-        cargo build --release --manifest-path parser/Cargo.toml
-        echo "CLI built at parser/target/release/swiftconcur-parser"
+        cargo build --release --manifest-path "${{ github.action_path }}/parser/Cargo.toml"
+        echo "CLI built at ${{ github.action_path }}/parser/target/release/swiftconcur-parser"
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -121,7 +121,7 @@ runs:
     - name: Install Node deps for scripts
       shell: bash
       run: |
-        cd scripts
+        cd "${{ github.action_path }}/scripts"
         npm install @actions/core @actions/github
 
     - name: Ensure jq is available (macOS)
@@ -137,7 +137,7 @@ runs:
       name: Run SwiftConcur
       shell: bash
       env:
-        PATH: ${{ env.PATH }}:${{ github.workspace }}/parser/target/release
+        PATH: ${{ env.PATH }}:${{ github.action_path }}/parser/target/release
         GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_SWIFT_VERSION: ${{ inputs.swift-version }}
         INPUT_WORKSPACE_PATH: ${{ inputs.workspace-path }}
@@ -153,4 +153,4 @@ runs:
         INPUT_DASHBOARD_URL: ${{ inputs['dashboard-url'] }}
         INPUT_XCODEBUILD_ARGS: ${{ inputs['xcodebuild-args'] }}
       run: |
-        bash ./entrypoint.sh
+        bash "${{ github.action_path }}/entrypoint.sh"

@@ -41,3 +41,4 @@ dashboard/.env.local
 instructions/.DS_Store
 /api/coverage
 /dashboard/coverage
+/docs/assistant/demoProj

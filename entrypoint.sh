@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Resolve action root directory (works for composite actions)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -208,7 +211,7 @@ if [ "$POST_COMMENT" = "true" ] && [ -n "$GITHUB_EVENT_PATH" ]; then
     
     if [ "$EVENT_NAME" = "pull_request" ]; then
         echo -e "${YELLOW}💬 Posting PR comment...${NC}"
-        node /scripts/post-comment.js \
+        node "$SCRIPT_DIR/scripts/post-comment.js" \
           "$BUILD_TIME_HUMAN" \
           "$DELTA_PCT" \
           "$ACTOR_COUNT" \
@@ -221,7 +224,7 @@ fi
 # Set commit status
 if [ -n "$GITHUB_SHA" ]; then
     echo -e "${YELLOW}📌 Setting commit status...${NC}"
-    /scripts/check-status.sh "$WARNING_COUNT" "$WARN_THRESHOLD" "$THRESHOLD"
+    "$SCRIPT_DIR/scripts/check-status.sh" "$WARNING_COUNT" "$WARN_THRESHOLD" "$THRESHOLD"
 fi
 
 # Upload artifacts
