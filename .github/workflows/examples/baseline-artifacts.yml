@@ -1,0 +1,42 @@
+name: SwiftConcur CI Example - Baseline via Artifacts
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  concurrency-check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download baseline artifact from main
+        if: github.event_name == 'pull_request'
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: ci.yml
+          branch: main
+          name: swiftconcur-baseline
+          path: .swiftconcur
+          if_no_artifact_found: warn
+
+      - uses: swiftconcur/swiftconcur-ci@v1
+        id: swiftconcur
+        with:
+          scheme: 'MyApp'
+          workspace-path: 'MyApp.xcworkspace'
+          baseline-path: '.swiftconcur/baseline.json'
+
+      - name: Upload/update baseline artifact (main only)
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: swiftconcur-baseline
+          path: ${{ steps.swiftconcur.outputs.json-report }}
+          if-no-files-found: ignore

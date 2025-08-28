@@ -1,5 +1,7 @@
 # SwiftConcur CI GitHub Action
 
+[![CI](https://github.com/GradualSystems-io/swiftconcur/actions/workflows/ci.yml/badge.svg)](https://github.com/GradualSystems-io/swiftconcur/actions/workflows/ci.yml)
+
 Automatically detect and track Swift concurrency warnings in your iOS/macOS projects.
 
 ## Features
@@ -118,6 +120,76 @@ curl -Ls https://github.com/GradualSystems-io/swiftconcur/releases/latest/downlo
 | `--format` | Output format (json, markdown, slack) | `json` |
 | `--baseline` | Baseline file for comparison | - |
 | `--threshold` | Maximum warnings allowed | `0` |
+
+## Baseline Comparison
+
+Use a baseline to highlight only new warnings and compute build-time deltas.
+
+Approach A — repo-tracked file (simple)
+
+```yaml
+# pull_request: compare to baseline committed on main
+steps:
+  - uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
+  - name: Download baseline from main
+    run: |
+      git fetch origin main
+      git checkout origin/main -- .swiftconcur/baseline.json || echo "No baseline found"
+  - uses: swiftconcur/swiftconcur-ci@v1
+    with:
+      scheme: 'MyApp'
+      workspace-path: 'MyApp.xcworkspace'
+      baseline-path: '.swiftconcur/baseline.json'
+  # On main: update baseline
+  - name: Update baseline (main only)
+    if: github.ref == 'refs/heads/main'
+    run: |
+      mkdir -p .swiftconcur
+      cp ${{ steps.swiftconcur.outputs.json-report }} .swiftconcur/baseline.json
+      git config user.name "github-actions[bot]"
+      git config user.email "github-actions[bot]@users.noreply.github.com"
+      git add .swiftconcur/baseline.json
+      git commit -m "Update SwiftConcur baseline" || echo "No changes"
+      git push
+```
+
+Approach B — artifacts (no commits on main)
+
+```yaml
+permissions:
+  actions: read
+  contents: read
+
+steps:
+  - uses: actions/checkout@v4
+  - name: Download baseline artifact from main
+    uses: dawidd6/action-download-artifact@v3
+    with:
+      workflow: ci.yml           # name or filename of workflow on main
+      branch: main
+      name: swiftconcur-baseline # artifact name
+      path: .swiftconcur
+      if_no_artifact_found: warn
+  - uses: swiftconcur/swiftconcur-ci@v1
+    id: swiftconcur
+    with:
+      scheme: 'MyApp'
+      workspace-path: 'MyApp.xcworkspace'
+      baseline-path: '.swiftconcur/baseline.json'
+  - name: Upload baseline artifact (update)
+    if: always()
+    uses: actions/upload-artifact@v4
+    with:
+      name: swiftconcur-baseline
+      path: ${{ steps.swiftconcur.outputs.json-report }}
+      if-no-files-found: ignore
+```
+
+Notes
+- Baseline JSON schema is the tool’s `json-report` output, which includes `warnings[]` (with stable IDs) and `build_time_seconds`.
+- If no baseline is present, the action computes metrics with empty new/fixed sets and omits build delta.
 | `--context-lines` | Lines of code context | `3` |
 
 ### Integration with PR Comments

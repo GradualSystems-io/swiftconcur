@@ -175,7 +175,14 @@ FIXED_WARNINGS=$(jq '.fixed_warnings | length' "$FINAL_OUTPUT")
 
 # Actor-isolation specific metrics
 ACTOR_COUNT=$(jq '[.warnings[] | select(.warning_type=="actor_isolation")] | length' "$FINAL_OUTPUT")
-ACTOR_NEW_COUNT=$NEW_WARNINGS
+# New actor-isolation warnings only (intersection of new_warnings IDs and actor warnings)
+ACTOR_NEW_COUNT=$(jq '
+  (.new_warnings // []) as $new
+  | (.warnings // []) as $ws
+  | ($ws | map(select(.warning_type=="actor_isolation") | .id)) as $actorIds
+  | ($new | map({(.): true}) | add // {}) as $newSet
+  | [$actorIds[] | select($newSet[.]) ] | length
+' "$FINAL_OUTPUT")
 
 # Top 3 actor-isolation offenders: file:line
 TOP3=$(jq -r '[.warnings[] | select(.warning_type=="actor_isolation") | ((.file_path|tostring|split("/"))[-1] + ":" + (.line_number|tostring))] | unique | .[:3] | join(", ")' "$FINAL_OUTPUT")
