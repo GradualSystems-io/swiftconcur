@@ -137,8 +137,8 @@ runs:
       name: Run SwiftConcur
       shell: bash
       env:
-        PATH: ${{ env.PATH }}:${{ github.action_path }}/parser/target/release
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        SWIFTPARSE_BIN: ${{ github.action_path }}/parser/target/release/swiftconcur-parser
         INPUT_SWIFT_VERSION: ${{ inputs.swift-version }}
         INPUT_WORKSPACE_PATH: ${{ inputs.workspace-path }}
         INPUT_PROJECT_PATH: ${{ inputs.project-path }}
