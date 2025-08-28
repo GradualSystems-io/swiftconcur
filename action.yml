@@ -33,6 +33,11 @@ inputs:
     required: false
     default: '0'
   
+  warn-threshold:
+    description: 'Warning threshold (soft warning before fail)'
+    required: false
+    default: '0'
+  
   baseline-path:
     description: 'Path to baseline JSON for comparison'
     required: false
@@ -52,6 +57,15 @@ inputs:
     required: false
     default: '3'
   
+  dashboard-url:
+    description: 'Dashboard base URL for PR comment link'
+    required: false
+    default: 'https://dashboard.swiftconcur.com'
+  
+  xcodebuild-args:
+    description: 'Additional xcodebuild arguments (e.g., -sdk iphonesimulator ...)'
+    required: false
+  
   github-token:
     description: 'GitHub token for posting comments'
     required: false
@@ -70,6 +84,10 @@ outputs:
     description: 'Path to full JSON report'
     value: ${{ steps.parse.outputs.json-report }}
   
+  build-time-seconds:
+    description: 'Measured build duration in seconds'
+    value: ${{ steps.parse.outputs.build-time-seconds }}
+  
   new-warnings:
     description: 'Number of new warnings vs baseline'
     value: ${{ steps.parse.outputs.new-warnings }}
@@ -79,7 +97,60 @@ outputs:
     value: ${{ steps.parse.outputs.fixed-warnings }}
 
 runs:
-  using: 'docker'
-  image: 'Dockerfile'
-  env:
-    GITHUB_TOKEN: ${{ inputs.github-token }}
+  using: 'composite'
+  steps:
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+
+    - name: Build SwiftConcur CLI
+      shell: bash
+      run: |
+        set -e
+        cargo build --release --manifest-path parser/Cargo.toml
+        echo "CLI built at parser/target/release/swiftconcur-parser"
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Node deps for scripts
+      shell: bash
+      run: |
+        cd scripts
+        npm install @actions/core @actions/github
+
+    - name: Ensure jq is available (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        if ! command -v jq >/dev/null 2>&1; then
+          brew install jq
+        fi
+        jq --version
+
+    - id: parse
+      name: Run SwiftConcur
+      shell: bash
+      env:
+        PATH: ${{ env.PATH }}:${{ github.workspace }}/parser/target/release
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_SWIFT_VERSION: ${{ inputs.swift-version }}
+        INPUT_WORKSPACE_PATH: ${{ inputs.workspace-path }}
+        INPUT_PROJECT_PATH: ${{ inputs.project-path }}
+        INPUT_SCHEME: ${{ inputs.scheme }}
+        INPUT_CONFIGURATION: ${{ inputs.configuration }}
+        INPUT_WARN_THRESHOLD: ${{ inputs['warn-threshold'] }}
+        INPUT_THRESHOLD: ${{ inputs.threshold }}
+        INPUT_BASELINE_PATH: ${{ inputs['baseline-path'] }}
+        INPUT_POST_COMMENT: ${{ inputs['post-comment'] }}
+        INPUT_FAIL_ON_WARNINGS: ${{ inputs['fail-on-warnings'] }}
+        INPUT_CONTEXT_LINES: ${{ inputs['context-lines'] }}
+        INPUT_DASHBOARD_URL: ${{ inputs['dashboard-url'] }}
+        INPUT_XCODEBUILD_ARGS: ${{ inputs['xcodebuild-args'] }}
+      run: |
+        bash ./entrypoint.sh

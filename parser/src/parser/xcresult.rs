@@ -76,8 +76,11 @@ impl XcresultParser {
                 // Try to read code context from file
                 let code_context = self.extract_code_context(file_path, line_number);
 
+                // Create a stable ID similar to xcodebuild parser
+                let id = format!("{}:{}:{}", file_path, line_number, message.len());
+
                 let warning = Warning {
-                    id: uuid::Uuid::new_v4().to_string(),
+                    id,
                     warning_type,
                     severity,
                     file_path: PathBuf::from(file_path),
@@ -369,5 +372,35 @@ mod tests {
         assert_eq!(warnings.len(), 2);
         assert_eq!(warnings[0].warning_type, WarningType::ActorIsolation);
         assert_eq!(warnings[1].warning_type, WarningType::SendableConformance);
+    }
+
+    #[test]
+    fn test_stable_id_generation() {
+        let json_content = r#"
+        {
+            "_values": [
+                {
+                    "documentLocationInCreatingWorkspace": {
+                        "url": { "_value": "file:///workspace/Sources/MyApp/File1.swift#EndingLineNumber=42&StartingLineNumber=42" }
+                    },
+                    "issueType": { "_value": "Swift Compiler Warning" },
+                    "message": { "_value": "actor-isolated property 'shared' can not be referenced" }
+                }
+            ]
+        }
+        "#;
+
+        let parser = XcresultParser::new(2);
+        let warnings = parser.parse_json(json_content).unwrap();
+
+        assert_eq!(warnings.len(), 1);
+        let w = &warnings[0];
+        let expected = format!(
+            "{}:{}:{}",
+            "/workspace/Sources/MyApp/File1.swift",
+            42,
+            "actor-isolated property 'shared' can not be referenced".len()
+        );
+        assert_eq!(w.id, expected);
     }
 }
