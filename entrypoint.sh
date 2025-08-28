@@ -121,7 +121,7 @@ if [ -n "$THRESHOLD" ] && [ "$THRESHOLD" -gt 0 ]; then
 fi
 
 # Run parser directly on the JSON file (not stdin)
-if ! eval $PARSER_CMD > "$PARSED_OUTPUT"; then
+if ! eval "$PARSER_CMD" > "$PARSED_OUTPUT"; then
     PARSER_EXIT_CODE=$?
     if [ $PARSER_EXIT_CODE -eq 1 ]; then
         echo -e "${RED}❌ Warning threshold exceeded${NC}"
@@ -161,7 +161,7 @@ if [ -n "$BASELINE_PATH" ] && [ -f "$BASELINE_PATH" ]; then
   # Build time delta vs baseline (percentage string like +12%)
   BASE_SECS=$(jq -r '.build_time_seconds // empty' "$BASELINE_PATH" 2>/dev/null || echo "")
   if [ -n "$BASE_SECS" ] && [ "$BASE_SECS" -gt 0 ] 2>/dev/null; then
-    DELTA_PCT=$(awk -v c=$BUILD_TIME_SECONDS -v b=$BASE_SECS 'BEGIN { printf "%+0.0f%%", ((c-b)*100.0)/b }')
+    DELTA_PCT=$(awk -v c="$BUILD_TIME_SECONDS" -v b="$BASE_SECS" 'BEGIN { printf "%+0.0f%%", ((c-b)*100.0)/b }')
   else
     DELTA_PCT=""
   fi
@@ -198,12 +198,14 @@ echo "  Actor-isolation warnings: $ACTOR_COUNT"
 echo "  Build time: $BUILD_TIME_HUMAN ${DELTA_PCT:+($DELTA_PCT vs baseline)}"
 
 # Set outputs
-echo "warning-count=$WARNING_COUNT" >> $GITHUB_OUTPUT
-echo "new-warnings=$NEW_WARNINGS" >> $GITHUB_OUTPUT
-echo "fixed-warnings=$FIXED_WARNINGS" >> $GITHUB_OUTPUT
-echo "summary-markdown=$MARKDOWN_OUTPUT" >> $GITHUB_OUTPUT
-echo "json-report=$FINAL_OUTPUT" >> $GITHUB_OUTPUT
-echo "build-time-seconds=$BUILD_TIME_SECONDS" >> $GITHUB_OUTPUT
+{
+  echo "warning-count=$WARNING_COUNT"
+  echo "new-warnings=$NEW_WARNINGS"
+  echo "fixed-warnings=$FIXED_WARNINGS"
+  echo "summary-markdown=$MARKDOWN_OUTPUT"
+  echo "json-report=$FINAL_OUTPUT"
+  echo "build-time-seconds=$BUILD_TIME_SECONDS"
+} >> "$GITHUB_OUTPUT"
 
 # Post comment if in PR context
 if [ "$POST_COMMENT" = "true" ] && [ -n "$GITHUB_EVENT_PATH" ]; then

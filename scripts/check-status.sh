@@ -27,7 +27,7 @@ if command -v gh &> /dev/null; then
     gh api \
         --method POST \
         -H "Accept: application/vnd.github+json" \
-        /repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA \
+        "/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
         -f state="$STATUS" \
         -f description="$DESCRIPTION" \
         -f context="swiftconcur/warnings"
