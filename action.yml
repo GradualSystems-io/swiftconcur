@@ -153,4 +153,4 @@ runs:
         INPUT_DASHBOARD_URL: ${{ inputs['dashboard-url'] }}
         INPUT_XCODEBUILD_ARGS: ${{ inputs['xcodebuild-args'] }}
       run: |
-        bash "${{ github.action_path }}/entrypoint.sh"
+        /bin/bash "${{ github.action_path }}/entrypoint.sh"
