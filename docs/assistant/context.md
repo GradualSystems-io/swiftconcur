@@ -1,5 +1,13 @@
 # SwiftConcur CI - Master Implementation Guide
 
+## Environment & Ops Constraints
+- Sandbox: workspace-write
+- Network: restricted
+- Approvals: on-request
+- Shell: zsh
+- Package manager: npm (package-lock present)
+- Rust toolchain: stable (via `actions-rust-lang/setup-rust-toolchain@v1`)
+
 ## Project Overview
 SwiftConcur CI is a comprehensive CI/CD solution for Swift projects that detects and tracks Swift concurrency issues (actor isolation violations, Sendable conformance, data races) through the development lifecycle.
 
@@ -17,13 +25,13 @@ SwiftConcur CI is a comprehensive CI/CD solution for Swift projects that detects
 
 **Implementation Priority**: HIGH - This is the foundation
 
-### 2. GitHub Action (`/action`)
+### 2. GitHub Action (root `action.yml`)
 **Purpose**: Integrate the parser into GitHub workflows
 
 **Key Features**:
-- Docker-based action
+- Docker-based action (see `Dockerfile` and `entrypoint.sh` at repo root)
 - Run xcodebuild and pipe to parser
-- Post results as PR comments
+- Post results as PR comments (see `scripts/post-comment.js`)
 - Set check status based on thresholds
 
 **Implementation Priority**: HIGH - Critical for CI integration
@@ -52,6 +60,8 @@ SwiftConcur CI is a comprehensive CI/CD solution for Swift projects that detects
 
 ### 5. GitHub Marketplace Integration (`/billing`)
 **Purpose**: Monetization and plan management
+
+Note: This component is planned and the `/billing` directory may not yet exist in the repo.
 
 **Implementation Priority**: LOW - After MVP validation
 
@@ -214,7 +224,7 @@ CREATE TABLE warnings (
 
 ### CI/CD Setup
 ```yaml
-# .github/workflows/ci.yml
+# Example workflow (stored at `.github/workflows/ci.yml`)
 name: CI
 on: [push, pull_request]
 jobs:
@@ -280,3 +290,27 @@ Create realistic test fixtures in `parser/tests/fixtures/`:
 3. Should warnings be deduplicated across runs?
 4. What's the retention policy for historical data?
 5. Should we support custom warning patterns via config?
+
+## Repo Map (Quick Orientation)
+- `parser/`: Rust CLI parser for xcodebuild JSON output
+- `action.yml`: GitHub Action definition (Docker-based)
+- `Dockerfile`, `entrypoint.sh`: Action runtime
+- `scripts/`: Helper scripts (e.g., `post-comment.js`)
+- `.github/workflows/`: CI workflows (e.g., `ci.yml`, `test-action.yml`)
+- `api/`: Cloudflare Workers API (planned/initial)
+- `dashboard/`: Next.js dashboard (planned/initial)
+- `docs/assistant/`: Assistant configuration and prompts
+- `LAUNCH/`: Launch docs and iterations
+
+## Local Dev Commands
+- Parser:
+  - `cd parser && cargo test`
+  - `cd parser && cargo clippy -- -D warnings`
+  - `cd parser && cargo fmt -- --check`
+- Action image (optional):
+  - `docker build -t swiftconcur-action .`
+  - `docker run --rm swiftconcur-action --help`
+- Dashboard (if present):
+  - `cd dashboard && npm install && npm run dev`
+- API (if using Wrangler):
+  - `cd api && npm install && npx wrangler dev`
