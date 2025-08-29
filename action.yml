@@ -110,8 +110,9 @@ runs:
       shell: bash
       run: |
         set -e
-        cargo build --release --manifest-path "${{ github.action_path }}/parser/Cargo.toml"
-        echo "CLI built at ${{ github.action_path }}/parser/target/release/swiftconcur-parser"
+        cd "${{ github.action_path }}/parser"
+        cargo build --release
+        echo "CLI built at $(pwd)/target/release/swiftconcur-parser"
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
