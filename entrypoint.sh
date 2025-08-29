@@ -131,7 +131,7 @@ fi
 
 # Detect parser binary name and ensure availability
 SWIFTPARSE_BIN="${SWIFTPARSE_BIN:-swiftconcur}"
-if ! command -v "$SWIFTPARSE_BIN" >/dev/null 2>&1; then
+if [ ! -x "$SWIFTPARSE_BIN" ]; then
   if command -v swiftconcur-parser >/dev/null 2>&1; then
     SWIFTPARSE_BIN="$(command -v swiftconcur-parser)"
   elif [ -x "$SCRIPT_DIR/parser/target/release/swiftconcur-parser" ]; then
@@ -153,25 +153,50 @@ if ! command -v "$SWIFTPARSE_BIN" >/dev/null 2>&1; then
   fi
 fi
 
+# Final sanity check and diagnostics
+if [ ! -x "$SWIFTPARSE_BIN" ]; then
+  echo -e "${RED}❌ Parser binary still not found at: $SWIFTPARSE_BIN${NC}"
+  echo "Contents of parser target dir (if any):"
+  ls -la "$SCRIPT_DIR/parser/target/release" 2>/dev/null || echo "(missing)"
+  exit 2
+fi
+
 PARSER_CMD="$SWIFTPARSE_BIN -f \"$JSON_OUTPUT\" --format json --context $CONTEXT_LINES"
 
 if [ -n "$THRESHOLD" ] && [ "$THRESHOLD" -gt 0 ]; then
     PARSER_CMD="$PARSER_CMD --threshold $THRESHOLD"
 fi
 
-# Run parser directly on the JSON file (not stdin)
-if ! eval "$PARSER_CMD" > "$PARSED_OUTPUT"; then
+# Run parser directly; fallback to cargo run if exec fails
+if ! eval "$PARSER_CMD" > "$PARSED_OUTPUT" 2>/dev/null; then
     PARSER_EXIT_CODE=$?
-    if [ $PARSER_EXIT_CODE -eq 1 ]; then
-        echo -e "${RED}❌ Warning threshold exceeded${NC}"
+    echo -e "${YELLOW}🔁 Parser direct exec failed (code $PARSER_EXIT_CODE). Retrying via cargo run...${NC}"
+    if command -v cargo >/dev/null 2>&1; then
+      (
+        cd "$SCRIPT_DIR/parser" && cargo run --release -- -f "$JSON_OUTPUT" --format json --context "$CONTEXT_LINES" ${THRESHOLD:+--threshold "$THRESHOLD"}
+      ) > "$PARSED_OUTPUT" 2>/dev/null || {
+        PARSER_EXIT_CODE=$?
+        if [ $PARSER_EXIT_CODE -eq 1 ]; then
+            echo -e "${RED}❌ Warning threshold exceeded${NC}"
+        else
+            echo -e "${RED}❌ Parser error${NC}"
+            exit 2
+        fi
+      }
     else
-        echo -e "${RED}❌ Parser error${NC}"
-        exit 2
+      if [ $PARSER_EXIT_CODE -eq 1 ]; then
+          echo -e "${RED}❌ Warning threshold exceeded${NC}"
+      else
+          echo -e "${RED}❌ Parser error${NC}"
+          exit 2
+      fi
     fi
 fi
 
-# Generate markdown summary
-"$SWIFTPARSE_BIN" -f "$JSON_OUTPUT" --format markdown > "$MARKDOWN_OUTPUT"
+# Generate markdown summary (fallback to cargo run)
+"$SWIFTPARSE_BIN" -f "$JSON_OUTPUT" --format markdown > "$MARKDOWN_OUTPUT" 2>/dev/null || (
+  command -v cargo >/dev/null 2>&1 && cd "$SCRIPT_DIR/parser" && cargo run --release -- -f "$JSON_OUTPUT" --format markdown > "$MARKDOWN_OUTPUT" 2>/dev/null || true
+)
 
 # Compute metrics and baseline diffs with jq
 FINAL_OUTPUT="$OUTPUT_DIR/report.json"
