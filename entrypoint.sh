@@ -129,11 +129,27 @@ else
   cp "$LOG_OUTPUT" "$JSON_OUTPUT"
 fi
 
-# Detect parser binary name
+# Detect parser binary name and ensure availability
 SWIFTPARSE_BIN="${SWIFTPARSE_BIN:-swiftconcur}"
 if ! command -v "$SWIFTPARSE_BIN" >/dev/null 2>&1; then
   if command -v swiftconcur-parser >/dev/null 2>&1; then
-    SWIFTPARSE_BIN="swiftconcur-parser"
+    SWIFTPARSE_BIN="$(command -v swiftconcur-parser)"
+  elif [ -x "$SCRIPT_DIR/parser/target/release/swiftconcur-parser" ]; then
+    SWIFTPARSE_BIN="$SCRIPT_DIR/parser/target/release/swiftconcur-parser"
+  else
+    echo -e "${YELLOW}🔧 Parser binary not found; attempting local build...${NC}"
+    if command -v cargo >/dev/null 2>&1; then
+      (
+        cd "$SCRIPT_DIR/parser" && cargo build --release
+      ) || {
+        echo -e "${RED}❌ Failed to build parser binary${NC}"
+        exit 2
+      }
+      SWIFTPARSE_BIN="$SCRIPT_DIR/parser/target/release/swiftconcur-parser"
+    else
+      echo -e "${RED}❌ Parser binary not available and cargo not installed${NC}"
+      exit 2
+    fi
   fi
 fi
 
