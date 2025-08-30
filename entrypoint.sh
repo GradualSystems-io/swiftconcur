@@ -297,7 +297,7 @@ fi
 # Set commit status
 if [ -n "$GITHUB_SHA" ]; then
     echo -e "${YELLOW}📌 Setting commit status...${NC}"
-    "$SCRIPT_DIR/scripts/check-status.sh" "$WARNING_COUNT" "$WARN_THRESHOLD" "$THRESHOLD"
+    /bin/bash "$SCRIPT_DIR/scripts/check-status.sh" "$WARNING_COUNT" "$WARN_THRESHOLD" "$THRESHOLD"
 fi
 
 # Upload artifacts
