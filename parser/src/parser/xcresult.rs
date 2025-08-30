@@ -27,7 +27,8 @@ impl XcresultParser {
         let value: Value = serde_json::from_str(json_content)?;
         let mut warnings = Vec::new();
 
-        let issues: Vec<Value> = if let Some(arr) = value.get("_values").and_then(|v| v.as_array()) {
+        let issues: Vec<Value> = if let Some(arr) = value.get("_values").and_then(|v| v.as_array())
+        {
             arr.clone()
         } else if value.is_array() {
             value.as_array().cloned().unwrap_or_default()
