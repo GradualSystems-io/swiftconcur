@@ -193,10 +193,14 @@ if ! eval "$PARSER_CMD" > "$PARSED_OUTPUT" 2>/dev/null; then
     fi
 fi
 
-# Generate markdown summary (fallback to cargo run)
-"$SWIFTPARSE_BIN" -f "$JSON_OUTPUT" --format markdown > "$MARKDOWN_OUTPUT" 2>/dev/null || (
-  command -v cargo >/dev/null 2>&1 && cd "$SCRIPT_DIR/parser" && cargo run --release -- -f "$JSON_OUTPUT" --format markdown > "$MARKDOWN_OUTPUT" 2>/dev/null || true
-)
+# Generate markdown summary with explicit fallback (avoid SC2015)
+if ! "$SWIFTPARSE_BIN" -f "$JSON_OUTPUT" --format markdown > "$MARKDOWN_OUTPUT" 2>/dev/null; then
+  if command -v cargo >/dev/null 2>&1; then
+    (
+      cd "$SCRIPT_DIR/parser" && cargo run --release -- -f "$JSON_OUTPUT" --format markdown > "$MARKDOWN_OUTPUT" 2>/dev/null
+    ) || true
+  fi
+fi
 
 # Compute metrics and baseline diffs with jq
 FINAL_OUTPUT="$OUTPUT_DIR/report.json"
