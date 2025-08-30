@@ -27,7 +27,10 @@ impl XcresultParser {
         let value: Value = serde_json::from_str(json_content)?;
         let mut warnings = Vec::new();
 
-        let issues: Vec<Value> = if let Some(arr) = value.get("_values").and_then(|v| v.as_array()) {
+        let issues: Vec<Value> = if let Some(arr) = value
+            .get("_values")
+            .and_then(|v| v.as_array())
+        {
             arr.clone()
         } else if value.is_array() {
             value.as_array().cloned().unwrap_or_default()
@@ -65,9 +68,26 @@ impl XcresultParser {
                 .and_then(|d| d.get("url"))
                 .and_then(|u| u.get("_value"))
                 .and_then(|s| s.as_str())
-                .or_else(|| issue.get("documentURL").and_then(|u| u.get("_value")).and_then(|s| s.as_str()))
-                .or_else(|| issue.get("documentLocation").and_then(|d| d.get("url")).and_then(|u| u.get("_value")).and_then(|s| s.as_str()))
-                .or_else(|| issue.get("documentLocationInWorkspace").and_then(|d| d.get("url")).and_then(|u| u.get("_value")).and_then(|s| s.as_str()));
+                .or_else(|| {
+                    issue
+                        .get("documentURL")
+                        .and_then(|u| u.get("_value"))
+                        .and_then(|s| s.as_str())
+                })
+                .or_else(|| {
+                    issue
+                        .get("documentLocation")
+                        .and_then(|d| d.get("url"))
+                        .and_then(|u| u.get("_value"))
+                        .and_then(|s| s.as_str())
+                })
+                .or_else(|| {
+                    issue
+                        .get("documentLocationInWorkspace")
+                        .and_then(|d| d.get("url"))
+                        .and_then(|u| u.get("_value"))
+                        .and_then(|s| s.as_str())
+                });
 
             if let Some(url) = url {
                 if let Some(captures) = URL_PARSER.captures(url) {
