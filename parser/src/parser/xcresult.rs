@@ -3,41 +3,15 @@ use crate::models::{CodeContext, Warning};
 use crate::parser::patterns::categorize_warning;
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
-use serde_json;
+use serde_json::{self, Value};
 use std::path::PathBuf;
 
 lazy_static! {
-    // Parse file path and line number from Xcode URL format
+    // Parse file path and line number from Xcode URL formats.
+    // Supports: StartingLineNumber, EndingLineNumber, or line=.
     static ref URL_PARSER: Regex = Regex::new(
-        r"file://(?P<path>[^#]+)#.*StartingLineNumber=(?P<line>\d+)"
+        r"file://(?P<path>[^#]+)#.*?(StartingLineNumber|EndingLineNumber|line)=(?P<line>\d+)"
     ).unwrap();
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct XcresultRoot {
-    #[serde(rename = "_values")]
-    pub values: Vec<IssueSummary>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct IssueSummary {
-    #[serde(rename = "documentLocationInCreatingWorkspace")]
-    pub document_location: DocumentLocation,
-    #[serde(rename = "issueType")]
-    pub issue_type: StringValue,
-    pub message: StringValue,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct DocumentLocation {
-    pub url: StringValue,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct StringValue {
-    #[serde(rename = "_value")]
-    pub value: String,
 }
 
 pub struct XcresultParser {
@@ -50,48 +24,74 @@ impl XcresultParser {
     }
 
     pub fn parse_json(&self, json_content: &str) -> Result<Vec<Warning>> {
-        let root: XcresultRoot = serde_json::from_str(json_content)?;
+        let value: Value = serde_json::from_str(json_content)?;
         let mut warnings = Vec::new();
 
-        for issue in root.values {
-            // Skip non-warning issues
-            if !issue.issue_type.value.contains("Warning") {
+        let issues: Vec<Value> = if let Some(arr) = value.get("_values").and_then(|v| v.as_array()) {
+            arr.clone()
+        } else if value.is_array() {
+            value.as_array().cloned().unwrap_or_default()
+        } else {
+            return Err(crate::error::ParseError::InvalidFormat(
+                "xcresult JSON missing _values array".to_string(),
+            ));
+        };
+
+        for issue in issues {
+            let issue_type = issue
+                .get("issueType")
+                .and_then(|v| v.get("_value"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if !issue_type.to_lowercase().contains("warning") {
                 continue;
             }
 
-            // Parse file path and line number from URL
-            let url = &issue.document_location.url.value;
-            if let Some(captures) = URL_PARSER.captures(url) {
-                let file_path = captures.name("path").unwrap().as_str();
-                let line_number: u32 = captures.name("line").unwrap().as_str().parse().unwrap_or(0);
+            let message = issue
+                .get("message")
+                .and_then(|v| v.get("_value"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
 
-                let message = &issue.message.value;
-                let (warning_type, severity) = categorize_warning(message);
+            let (warning_type, severity) = categorize_warning(&message);
+            if warning_type == crate::models::WarningType::Unknown {
+                continue;
+            }
 
-                // Skip non-concurrency warnings
-                if warning_type == crate::models::WarningType::Unknown {
-                    continue;
+            // Try multiple location keys and normalize to URL string
+            let url = issue
+                .get("documentLocationInCreatingWorkspace")
+                .and_then(|d| d.get("url"))
+                .and_then(|u| u.get("_value"))
+                .and_then(|s| s.as_str())
+                .or_else(|| issue.get("documentURL").and_then(|u| u.get("_value")).and_then(|s| s.as_str()))
+                .or_else(|| issue.get("documentLocation").and_then(|d| d.get("url")).and_then(|u| u.get("_value")).and_then(|s| s.as_str()))
+                .or_else(|| issue.get("documentLocationInWorkspace").and_then(|d| d.get("url")).and_then(|u| u.get("_value")).and_then(|s| s.as_str()));
+
+            if let Some(url) = url {
+                if let Some(captures) = URL_PARSER.captures(url) {
+                    let file_path = captures.name("path").unwrap().as_str();
+                    let line_number: u32 = captures
+                        .name("line")
+                        .and_then(|m| m.as_str().parse().ok())
+                        .unwrap_or(0);
+
+                    let code_context = self.extract_code_context(file_path, line_number);
+                    let id = format!("{}:{}:{}", file_path, line_number, message.len());
+
+                    warnings.push(Warning {
+                        id,
+                        warning_type,
+                        severity,
+                        file_path: PathBuf::from(file_path),
+                        line_number: line_number as usize,
+                        column_number: None,
+                        message,
+                        code_context,
+                        suggested_fix: None,
+                    });
                 }
-
-                // Try to read code context from file
-                let code_context = self.extract_code_context(file_path, line_number);
-
-                // Create a stable ID similar to xcodebuild parser
-                let id = format!("{}:{}:{}", file_path, line_number, message.len());
-
-                let warning = Warning {
-                    id,
-                    warning_type,
-                    severity,
-                    file_path: PathBuf::from(file_path),
-                    line_number: line_number as usize,
-                    column_number: None, // Not available in xcresult format
-                    message: message.clone(),
-                    code_context,
-                    suggested_fix: None,
-                };
-
-                warnings.push(warning);
             }
         }
 

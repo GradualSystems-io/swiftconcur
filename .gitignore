@@ -43,3 +43,5 @@ instructions/.DS_Store
 /dashboard/coverage
 /docs/assistant/demoProj
 /demos
+build.xcresult.zip
+/tmp_xc

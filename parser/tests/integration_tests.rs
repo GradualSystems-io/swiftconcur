@@ -201,6 +201,50 @@ mod xcresult_parser_tests {
     }
 
     #[test]
+    fn test_parse_main_actor_mutation_message_variant() {
+        let parser = XcresultParser::new(2);
+        let json_content = r#"{
+            "_values": [
+                {
+                    "documentLocationInCreatingWorkspace": {
+                        "url": { "_value": "file:///Users/test/Item.swift#EndingLineNumber=37&StartingLineNumber=37" }
+                    },
+                    "issueType": { "_value": "Swift Compiler Warning" },
+                    "message": { "_value": "Main actor-isolated property 'count' can not be mutated from a Sendable closure; this is an error in the Swift 6 language mode" }
+                }
+            ]
+        }"#;
+
+        let warnings = parser.parse_json(json_content).unwrap();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].line_number, 37);
+        assert_eq!(warnings[0].warning_type, WarningType::ActorIsolation);
+    }
+
+    #[test]
+    fn test_parse_document_url_alternative_field() {
+        let parser = XcresultParser::new(2);
+        let json_content = r#"{
+            "_values": [
+                {
+                    "documentURL": { "_value": "file:///Users/test/Sources/File.swift#line=12" },
+                    "issueType": { "_value": "Swift Compiler Warning" },
+                    "message": { "_value": "actor-isolated property 'shared' can not be referenced from a non-isolated context" }
+                }
+            ]
+        }"#;
+
+        let warnings = parser.parse_json(json_content).unwrap();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].line_number, 12);
+        assert!(warnings[0]
+            .file_path
+            .to_str()
+            .unwrap()
+            .ends_with("/Users/test/Sources/File.swift"));
+    }
+
+    #[test]
     fn test_parse_empty_xcresult() {
         let parser = XcresultParser::new(3);
         let json_content = include_str!("fixtures/xcresult_empty.json");
