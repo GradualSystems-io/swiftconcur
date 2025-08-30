@@ -120,11 +120,14 @@ echo -e "${YELLOW}🔍 Parsing warnings...${NC}"
 if [ -d "$RESULT_BUNDLE_PATH" ]; then
   if command -v xcrun >/dev/null 2>&1; then
     xcrun xcresulttool get object --path "$RESULT_BUNDLE_PATH" --format json --legacy \
-      | jq '[.. | objects 
-               | select(.issueType?._value? | test("Warning"; "i")) 
-               | select(has("documentLocationInCreatingWorkspace"))] 
+      | jq '[.. | objects
+               | select(.issueType?._value? | test("Warning"; "i"))] \
             | { _values: . }' > "$JSON_OUTPUT" \
         || echo '{"_values":[]}' > "$JSON_OUTPUT"
+    # Debug: how many warnings extracted from xcresult
+    echo "::group::xcresult warnings extracted"
+    jq '._values | length as $n | "count=" + ($n|tostring)' "$JSON_OUTPUT" 2>/dev/null || true
+    echo "::endgroup::"
   else
     echo '{"_values":[]}' > "$JSON_OUTPUT"
   fi
