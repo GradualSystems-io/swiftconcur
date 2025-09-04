@@ -139,7 +139,8 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
-        SWIFTPARSE_BIN: ${{ github.action_path }}/parser/target/release/swiftconcur-parser
+        # Cargo workspace compiles into workspace root target dir by default
+        SWIFTPARSE_BIN: ${{ github.action_path }}/target/release/swiftconcur-parser
         INPUT_SWIFT_VERSION: ${{ inputs.swift-version }}
         INPUT_WORKSPACE_PATH: ${{ inputs.workspace-path }}
         INPUT_PROJECT_PATH: ${{ inputs.project-path }}

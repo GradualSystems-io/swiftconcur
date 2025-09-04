@@ -141,7 +141,11 @@ SWIFTPARSE_BIN="${SWIFTPARSE_BIN:-swiftconcur}"
 if [ ! -x "$SWIFTPARSE_BIN" ]; then
   if command -v swiftconcur-parser >/dev/null 2>&1; then
     SWIFTPARSE_BIN="$(command -v swiftconcur-parser)"
+  elif [ -x "$SCRIPT_DIR/target/release/swiftconcur-parser" ]; then
+    # Cargo workspace default target dir
+    SWIFTPARSE_BIN="$SCRIPT_DIR/target/release/swiftconcur-parser"
   elif [ -x "$SCRIPT_DIR/parser/target/release/swiftconcur-parser" ]; then
+    # Non-workspace or overridden target dir
     SWIFTPARSE_BIN="$SCRIPT_DIR/parser/target/release/swiftconcur-parser"
   else
     echo -e "${YELLOW}🔧 Parser binary not found; attempting local build...${NC}"
@@ -152,7 +156,12 @@ if [ ! -x "$SWIFTPARSE_BIN" ]; then
         echo -e "${RED}❌ Failed to build parser binary${NC}"
         exit 2
       }
-      SWIFTPARSE_BIN="$SCRIPT_DIR/parser/target/release/swiftconcur-parser"
+      # Prefer workspace root target dir; fallback to crate-local target
+      if [ -x "$SCRIPT_DIR/target/release/swiftconcur-parser" ]; then
+        SWIFTPARSE_BIN="$SCRIPT_DIR/target/release/swiftconcur-parser"
+      else
+        SWIFTPARSE_BIN="$SCRIPT_DIR/parser/target/release/swiftconcur-parser"
+      fi
     else
       echo -e "${RED}❌ Parser binary not available and cargo not installed${NC}"
       exit 2
@@ -164,8 +173,9 @@ USE_CARGO_RUN=0
 # Final sanity check and diagnostics; prefer falling back rather than exiting
 if [ ! -x "$SWIFTPARSE_BIN" ]; then
   echo -e "${YELLOW}ℹ️  Parser binary not executable at: $SWIFTPARSE_BIN — will use cargo run fallback${NC}"
-  echo "Contents of parser target dir (if any):"
-  ls -la "$SCRIPT_DIR/parser/target/release" 2>/dev/null || echo "(missing)"
+  echo "Contents of potential target dirs (if any):"
+  ls -la "$SCRIPT_DIR/target/release" 2>/dev/null || echo "(workspace target missing)"
+  ls -la "$SCRIPT_DIR/parser/target/release" 2>/dev/null || echo "(crate target missing)"
   USE_CARGO_RUN=1
 fi
 
