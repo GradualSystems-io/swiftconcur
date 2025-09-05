@@ -1,6 +1,6 @@
-use swiftconcur_parser::{run, cli::Cli, cli::OutputFormat};
-use tempfile::NamedTempFile;
 use std::io::Write;
+use swiftconcur_parser::{cli::Cli, cli::OutputFormat, run};
+use tempfile::NamedTempFile;
 
 #[test]
 fn test_parse_github_action_log_warning() {
@@ -32,15 +32,17 @@ fn test_parse_github_action_log_warning() {
     // Capture output
     let result = run(cli);
     assert!(result.is_ok());
-    
+
     // The function internally uses println!, so we need to test differently
     // Let's verify the parsing works by using the library function directly
-    
+
     use swiftconcur_parser::find_concurrency_warnings;
     let warnings = find_concurrency_warnings(raw_log);
-    
+
     assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].contains("main actor-isolated property 'count' can not be mutated from a Sendable closure"));
+    assert!(warnings[0].contains(
+        "main actor-isolated property 'count' can not be mutated from a Sendable closure"
+    ));
 }
 
 #[test]
@@ -61,16 +63,16 @@ Build completed with warnings.
 
     use swiftconcur_parser::find_concurrency_warnings;
     let warnings = find_concurrency_warnings(raw_log);
-    
+
     assert_eq!(warnings.len(), 3);
-    
+
     // Verify each warning type is detected
     assert!(warnings[0].contains("actor-isolated property"));
     assert!(warnings[1].contains("does not conform to the 'Sendable' protocol"));
     assert!(warnings[2].contains("data race condition detected"));
 }
 
-#[test] 
+#[test]
 fn test_ignore_non_swift_concurrency_warnings() {
     let raw_log = r#"
 /project/File.swift:10:5: warning: variable 'unused' was never used; consider replacing with '_' or removing it
@@ -81,7 +83,7 @@ fn test_ignore_non_swift_concurrency_warnings() {
 
     use swiftconcur_parser::find_concurrency_warnings;
     let warnings = find_concurrency_warnings(raw_log);
-    
+
     // Should only find the actor isolation warning, ignoring others
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("main actor-isolated property"));
@@ -90,10 +92,10 @@ fn test_ignore_non_swift_concurrency_warnings() {
 #[test]
 fn test_empty_log_produces_no_warnings() {
     let empty_log = "";
-    
+
     use swiftconcur_parser::find_concurrency_warnings;
     let warnings = find_concurrency_warnings(empty_log);
-    
+
     assert_eq!(warnings.len(), 0);
 }
 
@@ -105,11 +107,12 @@ File.swift: incomplete line
 /test/File.swift:invalid:25: warning: malformed line number
 /test/Valid.swift:30:5: warning: actor-isolated property 'test' cannot be referenced
 incomplete warning line without proper format
-"#.trim();
+"#
+    .trim();
 
     use swiftconcur_parser::find_concurrency_warnings;
     let warnings = find_concurrency_warnings(malformed_log);
-    
+
     // Should only parse the valid warning line
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("actor-isolated property"));
@@ -134,7 +137,7 @@ SwiftCompile normal arm64 /Users/runner/work/ConcurCLIDemo/ConcurCLIDemo/ConcurD
 
     use swiftconcur_parser::find_concurrency_warnings;
     let warnings = find_concurrency_warnings(mixed_log);
-    
+
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("main actor-isolated property"));
 }

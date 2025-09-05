@@ -17,7 +17,7 @@ pub fn run(cli: Cli) -> Result<i32> {
     let warnings = if cli.input == "-" {
         let stdin = io::stdin();
         let reader = BufReader::new(stdin.lock());
-        
+
         // Try XcodeBuildParser first (JSON), fall back to RawLogParser
         let xcodebuild_parser = XcodeBuildParser::new(cli.context);
         match xcodebuild_parser.parse_stream(reader) {
@@ -53,7 +53,7 @@ pub fn run(cli: Cli) -> Result<i32> {
             let file = File::open(&cli.input)?;
             let reader = BufReader::new(file);
             let xcodebuild_parser = XcodeBuildParser::new(cli.context);
-            
+
             match xcodebuild_parser.parse_stream(reader) {
                 Ok(warnings) if !warnings.is_empty() => warnings,
                 _ => {
@@ -96,16 +96,14 @@ pub fn run(cli: Cli) -> Result<i32> {
 // Legacy compatibility function for existing CLI
 pub fn find_concurrency_warnings(input: &str) -> Vec<String> {
     use std::io::Cursor;
-    
+
     // Try XcodeBuildParser first
     let xcodebuild_parser = XcodeBuildParser::new(3);
     let cursor = Cursor::new(input);
     let reader = BufReader::new(cursor);
 
     match xcodebuild_parser.parse_stream(reader) {
-        Ok(warnings) if !warnings.is_empty() => {
-            warnings.into_iter().map(|w| w.message).collect()
-        }
+        Ok(warnings) if !warnings.is_empty() => warnings.into_iter().map(|w| w.message).collect(),
         _ => {
             // Fallback to RawLogParser
             let rawlog_parser = RawLogParser::new(3);

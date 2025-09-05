@@ -170,7 +170,7 @@ mod tests {
 
         assert_eq!(warnings.len(), 1);
         let warning = &warnings[0];
-        
+
         assert_eq!(warning.warning_type, WarningType::ActorIsolation);
         assert_eq!(warning.severity, Severity::High);
         assert_eq!(warning.line_number, 37);
@@ -192,12 +192,14 @@ mod tests {
 
         assert_eq!(warnings.len(), 1);
         let warning = &warnings[0];
-        
+
         assert_eq!(warning.warning_type, WarningType::SendableConformance);
         assert_eq!(warning.severity, Severity::High);
         assert_eq!(warning.line_number, 78);
         assert_eq!(warning.column_number, Some(15));
-        assert!(warning.message.contains("does not conform to the 'Sendable'"));
+        assert!(warning
+            .message
+            .contains("does not conform to the 'Sendable'"));
     }
 
     #[test]
@@ -212,7 +214,7 @@ mod tests {
 
         assert_eq!(warnings.len(), 1);
         let warning = &warnings[0];
-        
+
         assert_eq!(warning.warning_type, WarningType::DataRace);
         assert_eq!(warning.severity, Severity::Critical);
         assert_eq!(warning.line_number, 120);
@@ -226,7 +228,8 @@ mod tests {
 /test/SomeClass.m:45:12: warning: some objective-c warning
 /test/Main.swift:30:5: warning: main actor-isolated property cannot be referenced
 /test/header.h:10:1: warning: deprecated function
-        "#.trim();
+        "#
+        .trim();
 
         let parser = RawLogParser::new(2);
         let cursor = Cursor::new(log_content);
@@ -234,7 +237,11 @@ mod tests {
 
         // Should only find the Swift concurrency warning
         assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].file_path.to_str().unwrap().contains("Main.swift"));
+        assert!(warnings[0]
+            .file_path
+            .to_str()
+            .unwrap()
+            .contains("Main.swift"));
         assert_eq!(warnings[0].warning_type, WarningType::ActorIsolation);
     }
 
@@ -273,14 +280,14 @@ Build completed
         let warnings = parser.parse_stream(cursor).unwrap();
 
         assert_eq!(warnings.len(), 3);
-        
+
         // Verify all warnings are correctly parsed
         assert_eq!(warnings[0].warning_type, WarningType::ActorIsolation);
         assert_eq!(warnings[0].line_number, 42);
-        
+
         assert_eq!(warnings[1].warning_type, WarningType::SendableConformance);
         assert_eq!(warnings[1].line_number, 78);
-        
+
         assert_eq!(warnings[2].warning_type, WarningType::DataRace);
         assert_eq!(warnings[2].line_number, 95);
     }
@@ -313,7 +320,8 @@ This is not a warning line
 File.swift: some incomplete line
 /test/File.swift:invalid:25: warning: bad line format
 /test/Valid.swift:30:5: warning: actor-isolated property cannot be referenced
-        "#.trim();
+        "#
+        .trim();
 
         let parser = RawLogParser::new(2);
         let cursor = Cursor::new(log_content);
@@ -322,7 +330,11 @@ File.swift: some incomplete line
         // Should only parse the valid warning
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].line_number, 30);
-        assert!(warnings[0].file_path.to_str().unwrap().contains("Valid.swift"));
+        assert!(warnings[0]
+            .file_path
+            .to_str()
+            .unwrap()
+            .contains("Valid.swift"));
     }
 
     #[test]
@@ -340,7 +352,8 @@ File.swift: some incomplete line
     fn test_context_extraction_with_missing_file() {
         let log_content = r#"
 /nonexistent/File.swift:42:15: warning: actor-isolated property 'test' can not be referenced
-        "#.trim();
+        "#
+        .trim();
 
         let parser = RawLogParser::new(2);
         let cursor = Cursor::new(log_content);
@@ -348,7 +361,7 @@ File.swift: some incomplete line
 
         assert_eq!(warnings.len(), 1);
         let warning = &warnings[0];
-        
+
         // Should handle missing file gracefully
         assert!(warning.code_context.before.is_empty());
         assert!(warning.code_context.line.is_empty());
@@ -381,11 +394,15 @@ File.swift: some incomplete line
         for (log_line, expected_fix_snippet) in test_cases {
             let cursor = Cursor::new(log_line);
             let warnings = parser.parse_stream(cursor).unwrap();
-            
+
             assert_eq!(warnings.len(), 1);
             let fix = warnings[0].suggested_fix.as_ref().unwrap();
-            assert!(fix.contains(expected_fix_snippet), 
-                "Expected fix to contain '{}', but got '{}'", expected_fix_snippet, fix);
+            assert!(
+                fix.contains(expected_fix_snippet),
+                "Expected fix to contain '{}', but got '{}'",
+                expected_fix_snippet,
+                fix
+            );
         }
     }
 }
