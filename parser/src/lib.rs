@@ -8,17 +8,28 @@ use cli::{Cli, OutputFormat};
 use error::Result;
 use formatters::{Formatter, JsonFormatter, MarkdownFormatter, SlackFormatter};
 use models::WarningRun;
-use parser::{check_threshold, filter_warnings, XcodeBuildParser, XcresultParser};
+use parser::{check_threshold, filter_warnings, RawLogParser, XcodeBuildParser, XcresultParser};
 use std::fs::File;
 use std::io::{self, BufReader};
 
 pub fn run(cli: Cli) -> Result<i32> {
-    // Parse input - detect format and use appropriate parser
+    // Parse input - detect format and use appropriate parser with fallbacks
     let warnings = if cli.input == "-" {
         let stdin = io::stdin();
         let reader = BufReader::new(stdin.lock());
-        let parser = XcodeBuildParser::new(cli.context);
-        parser.parse_stream(reader)?
+        
+        // Try XcodeBuildParser first (JSON), fall back to RawLogParser
+        let xcodebuild_parser = XcodeBuildParser::new(cli.context);
+        match xcodebuild_parser.parse_stream(reader) {
+            Ok(warnings) if !warnings.is_empty() => warnings,
+            _ => {
+                // Fallback: re-read stdin as raw log format
+                let stdin = io::stdin();
+                let reader = BufReader::new(stdin.lock());
+                let rawlog_parser = RawLogParser::new(cli.context);
+                rawlog_parser.parse_stream(reader)?
+            }
+        }
     } else {
         // Read file to detect format
         let content = std::fs::read_to_string(&cli.input)?;
@@ -27,13 +38,32 @@ pub fn run(cli: Cli) -> Result<i32> {
         if content.trim_start().starts_with('{') && content.contains("_values") {
             // Parse as xcresult JSON
             let parser = XcresultParser::new(cli.context);
-            parser.parse_json(&content)?
+            match parser.parse_json(&content) {
+                Ok(warnings) if !warnings.is_empty() => warnings,
+                _ => {
+                    // Fallback to raw log parsing
+                    use std::io::Cursor;
+                    let cursor = Cursor::new(&content);
+                    let rawlog_parser = RawLogParser::new(cli.context);
+                    rawlog_parser.parse_stream(cursor)?
+                }
+            }
         } else {
-            // Parse as xcodebuild text output
+            // Try XcodeBuildParser first (structured JSON lines), then RawLogParser
             let file = File::open(&cli.input)?;
             let reader = BufReader::new(file);
-            let parser = XcodeBuildParser::new(cli.context);
-            parser.parse_stream(reader)?
+            let xcodebuild_parser = XcodeBuildParser::new(cli.context);
+            
+            match xcodebuild_parser.parse_stream(reader) {
+                Ok(warnings) if !warnings.is_empty() => warnings,
+                _ => {
+                    // Fallback to raw log parsing for plain text xcodebuild output
+                    use std::io::Cursor;
+                    let cursor = Cursor::new(&content);
+                    let rawlog_parser = RawLogParser::new(cli.context);
+                    rawlog_parser.parse_stream(cursor)?
+                }
+            }
         }
     };
 
@@ -66,12 +96,24 @@ pub fn run(cli: Cli) -> Result<i32> {
 // Legacy compatibility function for existing CLI
 pub fn find_concurrency_warnings(input: &str) -> Vec<String> {
     use std::io::Cursor;
-    let parser = XcodeBuildParser::new(3);
+    
+    // Try XcodeBuildParser first
+    let xcodebuild_parser = XcodeBuildParser::new(3);
     let cursor = Cursor::new(input);
     let reader = BufReader::new(cursor);
 
-    match parser.parse_stream(reader) {
-        Ok(warnings) => warnings.into_iter().map(|w| w.message).collect(),
-        Err(_) => Vec::new(),
+    match xcodebuild_parser.parse_stream(reader) {
+        Ok(warnings) if !warnings.is_empty() => {
+            warnings.into_iter().map(|w| w.message).collect()
+        }
+        _ => {
+            // Fallback to RawLogParser
+            let rawlog_parser = RawLogParser::new(3);
+            let cursor = Cursor::new(input);
+            match rawlog_parser.parse_stream(cursor) {
+                Ok(warnings) => warnings.into_iter().map(|w| w.message).collect(),
+                Err(_) => Vec::new(),
+            }
+        }
     }
 }
