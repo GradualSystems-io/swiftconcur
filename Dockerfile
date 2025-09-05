@@ -30,7 +30,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs
 
 # Copy parser binary
-COPY --from=builder /build/target/release/swiftconcur-parser /usr/local/bin/swiftconcur
+COPY --from=builder /build/target/release/swiftconcur-parser /usr/local/bin/swiftconcur-parser
 
 # Copy action scripts
 COPY entrypoint.sh /entrypoint.sh
