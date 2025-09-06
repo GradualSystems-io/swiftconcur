@@ -9,9 +9,13 @@ const createJestConfig = nextJest({
 const customJestConfig = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testEnvironment: 'jest-environment-jsdom',
-  moduleNameMapping: {
+  moduleNameMapper: {
     // Handle module aliases (this will be automatically configured for you based on your tsconfig.json paths)
     '^@/(.*)$': '<rootDir>/$1',
+    // Mock external dependencies for testing
+    '^@octokit/rest$': '<rootDir>/__mocks__/@octokit/rest.js',
+    '^@supabase/supabase-js$': '<rootDir>/__mocks__/@supabase/supabase-js.js',
+    '^@supabase/ssr$': '<rootDir>/__mocks__/@supabase/ssr.js',
   },
   collectCoverageFrom: [
     'components/**/*.{js,jsx,ts,tsx}',
@@ -38,13 +42,6 @@ const customJestConfig = {
     '<rootDir>/coverage/',
     '<rootDir>/out/',
   ],
-  // Security: Mock external dependencies by default
-  moduleNameMapping: {
-    '^@/(.*)$': '<rootDir>/$1',
-    // Mock Supabase for security in tests
-    '^@supabase/supabase-js$': '<rootDir>/__mocks__/supabase.js',
-    '^@supabase/ssr$': '<rootDir>/__mocks__/supabase-ssr.js',
-  },
 }
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async

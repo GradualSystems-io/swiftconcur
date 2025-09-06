@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { GitBranch, Plus, ExternalLink, Settings, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 import { ConnectRepositoryForm } from '@/components/repositories/ConnectRepositoryForm';
+import GitHubInstallation from '@/components/repositories/GitHubInstallation';
 
 export default async function RepositoriesPage() {
   const { user, error } = await verifyUser();
@@ -21,20 +22,22 @@ export default async function RepositoriesPage() {
 
   const supabase = createClient();
   
-  // Fetch user's repositories
+  // Fetch user's repositories from GitHub App integration
   const { data: repos } = await supabase
-    .from('user_repos')
+    .from('repositories')
     .select(`
-      repo_id,
-      repo_name,
-      repo_tier,
-      total_warnings,
-      critical_warnings,
-      last_run_at,
-      created_at
+      id,
+      name,
+      full_name,
+      is_private,
+      default_branch,
+      language,
+      stars_count,
+      updated_at,
+      github_installations(target_login)
     `)
     .eq('user_id', user.id)
-    .order('created_at', { ascending: false });
+    .order('updated_at', { ascending: false });
 
   return (
     <div className="space-y-6">
@@ -63,91 +66,8 @@ export default async function RepositoriesPage() {
         </div>
       </div>
 
-      {/* Repository List */}
-      {repos && repos.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {repos.map((repo) => (
-            <Card key={repo.repo_id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <GitBranch className="h-4 w-4" />
-                    <CardTitle className="text-lg">{repo.repo_name}</CardTitle>
-                  </div>
-                  <span className={`px-2 py-1 text-xs rounded-full ${
-                    repo.repo_tier === 'enterprise' ? 'bg-purple-100 text-purple-800' :
-                    repo.repo_tier === 'pro' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {repo.repo_tier}
-                  </span>
-                </div>
-              </CardHeader>
-              
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Total Warnings</p>
-                    <p className="font-semibold">{repo.total_warnings || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Critical</p>
-                    <p className="font-semibold text-red-600">{repo.critical_warnings || 0}</p>
-                  </div>
-                </div>
-                
-                <div className="text-sm">
-                  <p className="text-muted-foreground">Last Run</p>
-                  <p className="font-medium">
-                    {repo.last_run_at 
-                      ? new Date(repo.last_run_at).toLocaleDateString()
-                      : 'Never'
-                    }
-                  </p>
-                </div>
-                
-                <div className="flex gap-2 pt-2">
-                  <Button size="sm" variant="outline" asChild>
-                    <Link href={`/repositories/${repo.repo_id}`}>
-                      <ExternalLink className="h-3 w-3 mr-1" />
-                      View
-                    </Link>
-                  </Button>
-                  <Button size="sm" variant="ghost" asChild>
-                    <Link href={`/repositories/${repo.repo_id}/settings`}>
-                      <Settings className="h-3 w-3 mr-1" />
-                      Settings
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <Card>
-          <CardContent className="text-center py-12">
-            <GitBranch className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-            <h3 className="text-xl font-semibold mb-2">No Repositories Connected</h3>
-            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-              Start monitoring your Swift projects by connecting your first repository.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Connect Repository Section */}
-      <Card id="connect">
-        <CardHeader>
-          <CardTitle>Connect a New Repository</CardTitle>
-          <CardDescription>
-            Add a GitHub repository to start monitoring Swift concurrency warnings
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ConnectRepositoryForm />
-        </CardContent>
-      </Card>
+      {/* GitHub App Integration */}
+      <GitHubInstallation />
 
       {/* Setup Instructions */}
       <Card>
