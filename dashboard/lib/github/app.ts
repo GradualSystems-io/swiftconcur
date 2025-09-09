@@ -12,7 +12,7 @@ import { verify } from '@octokit/webhooks-methods';
 const requiredEnvVars = {
   GITHUB_APP_ID: process.env.GITHUB_APP_ID,
   GITHUB_APP_PRIVATE_KEY: process.env.GITHUB_APP_PRIVATE_KEY,
-  GITHUB_APP_WEBHOOK_SECRET: process.env.GITHUB_APP_WEBHOOK_SECRET,
+  GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET,
 } as const;
 
 for (const [key, value] of Object.entries(requiredEnvVars)) {
@@ -25,7 +25,7 @@ for (const [key, value] of Object.entries(requiredEnvVars)) {
 export const GITHUB_APP_CONFIG = {
   appId: parseInt(requiredEnvVars.GITHUB_APP_ID!, 10),
   privateKey: requiredEnvVars.GITHUB_APP_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-  webhookSecret: requiredEnvVars.GITHUB_APP_WEBHOOK_SECRET!,
+  webhookSecret: requiredEnvVars.GITHUB_WEBHOOK_SECRET!,
   permissions: {
     contents: 'read',
     issues: 'write',
