@@ -3,8 +3,8 @@ const nextConfig = {
   // Base path for hosting on gradualsystems.io/SwiftConcur
   basePath: '/SwiftConcur',
   
-  // Enable trailing slashes for better SEO
-  trailingSlash: true,
+  // Disable trailing slashes for API routes (required for webhooks)
+  trailingSlash: false,
   
   // TypeScript and ESLint config for deployment
   typescript: {
