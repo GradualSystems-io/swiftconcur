@@ -3,7 +3,7 @@
  * Processes installation, repository, and SwiftConcur warning events
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 import { 
   getInstallation, 
   postPullRequestComment, 
@@ -95,7 +95,7 @@ async function storeWebhookEvent(
   payload: WebhookPayload,
   signatureValid = false
 ): Promise<string> {
-  const supabase = createClient();
+  const supabase = createServiceRoleClient();
 
   const { data, error } = await supabase
     .from('github_webhook_events')
@@ -121,7 +121,7 @@ async function storeWebhookEvent(
  * Mark webhook event as processed
  */
 async function markEventProcessed(eventId: string, error?: string): Promise<void> {
-  const supabase = createClient();
+  const supabase = createServiceRoleClient();
 
   const updateData: any = {
     processed_at: new Date().toISOString(),
@@ -225,7 +225,7 @@ export async function handleInstallationRepositoriesEvent(
 
   try {
     // Find user who owns this installation
-    const supabase = createClient();
+    const supabase = createServiceRoleClient();
     const { data: installationData } = await supabase
       .from('github_installations')
       .select('user_id')
@@ -292,7 +292,7 @@ export async function handleSwiftConcurWarningEvent(
   );
 
   try {
-    const supabase = createClient();
+    const supabase = createServiceRoleClient();
 
     // Find the repository in our database
     const { data: repoData, error: repoError } = await supabase
@@ -425,7 +425,7 @@ export async function handlePullRequestEvent(
     }
 
     // Find recent warning run for this commit
-    const supabase = createClient();
+    const supabase = createServiceRoleClient();
     const { data: warningRun } = await supabase
       .from('warning_runs')
       .select(`

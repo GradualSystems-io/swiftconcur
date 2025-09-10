@@ -53,6 +53,28 @@ export function createClient() {
   );
 }
 
+/**
+ * Create a service role client for server-side operations (webhooks, background jobs)
+ * This bypasses Row Level Security and should only be used in trusted server contexts
+ */
+export function createServiceRoleClient() {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable');
+  }
+
+  return createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      cookies: {
+        get() { return undefined; },
+        set() {},
+        remove() {},
+      },
+    }
+  );
+}
+
 export async function verifyUser() {
   const supabase = createClient();
   
