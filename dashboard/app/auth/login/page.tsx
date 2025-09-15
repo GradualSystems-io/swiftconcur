@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [redirectTo, setRedirectTo] = useState('/');
   const router = useRouter();
   const supabase = createClient();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
@@ -26,13 +27,39 @@ export default function LoginPage() {
     const urlParams = new URLSearchParams(window.location.search);
     const urlError = urlParams.get('error');
     const urlMessage = urlParams.get('message');
-    
+    const redirectParam = urlParams.get('redirect');
+
     if (urlError) {
       setError(decodeURIComponent(urlError));
     }
     if (urlMessage) {
       setMessage(decodeURIComponent(urlMessage));
     }
+
+    const sanitizeRedirect = (value: string | null) => {
+      if (!value) return '/';
+
+      try {
+        const resolved = new URL(value, window.location.origin);
+
+        if (resolved.origin !== window.location.origin) {
+          return '/';
+        }
+
+        const path = `${resolved.pathname}${resolved.search}${resolved.hash}` || '/';
+
+        // Prevent redirect loops back to the login page
+        if (path.startsWith('/auth/login')) {
+          return '/';
+        }
+
+        return path;
+      } catch {
+        return '/';
+      }
+    };
+
+    setRedirectTo(sanitizeRedirect(redirectParam));
   }, []);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
@@ -51,8 +78,7 @@ export default function LoginPage() {
         setError(error.message);
       } else {
         console.log('Login successful:', data.user?.email, 'Email confirmed:', data.user?.email_confirmed_at);
-        router.push('/');
-        router.refresh();
+        window.location.href = redirectTo || '/';
       }
     } catch (err) {
       console.error('Login exception:', err);
@@ -70,7 +96,16 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: `${siteUrl}/SwiftConcur/auth/callback`,
+          redirectTo: (() => {
+            try {
+              const callbackUrl = new URL('/SwiftConcur/auth/callback', siteUrl);
+              callbackUrl.searchParams.set('next', redirectTo || '/');
+              return callbackUrl.toString();
+            } catch (exception) {
+              console.warn('Failed to construct OAuth redirect URL:', exception);
+              return `${siteUrl}/SwiftConcur/auth/callback`;
+            }
+          })(),
         },
       });
 
