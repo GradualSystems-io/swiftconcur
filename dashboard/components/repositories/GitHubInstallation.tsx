@@ -43,6 +43,26 @@ export default function GitHubInstallation() {
 
   const supabase = createClient();
 
+  const normalizeInstallation = (row: any): GitHubInstallation => ({
+    id: row.id,
+    installationId: row.installation_id ?? row.installationId,
+    targetLogin: row.target_login ?? row.targetLogin,
+    targetType: row.target_type ?? row.targetType,
+    permissions: row.permissions || {},
+    createdAt: row.created_at ?? row.createdAt,
+    suspendedAt: row.suspended_at ?? row.suspendedAt,
+  });
+
+  const normalizeRepository = (row: any): Repository => ({
+    id: row.id || `${row.github_repo_id}`,
+    name: row.name,
+    fullName: row.full_name ?? row.fullName,
+    isPrivate: row.is_private ?? row.isPrivate,
+    defaultBranch: row.default_branch ?? row.defaultBranch ?? 'main',
+    language: row.language ?? undefined,
+    starsCount: row.stars_count ?? row.starsCount ?? 0,
+  });
+
   // Load installation data
   useEffect(() => {
     loadInstallationData();
@@ -85,7 +105,7 @@ export default function GitHubInstallation() {
         throw new Error(`Failed to load installation: ${installationError.message}`);
       }
 
-      setInstallation(installationData);
+      setInstallation(installationData ? normalizeInstallation(installationData) : null);
 
       // Get repositories if installation exists
       if (installationData) {
@@ -99,7 +119,7 @@ export default function GitHubInstallation() {
           console.error('Failed to load repositories:', reposError);
           // Don't throw - installation data is more important
         } else {
-          setRepositories(reposData || []);
+          setRepositories((reposData || []).map(normalizeRepository));
         }
       }
     } catch (error) {
@@ -183,7 +203,12 @@ export default function GitHubInstallation() {
 
   const handleManageInstallation = () => {
     if (installation) {
-      const manageUrl = `https://github.com/settings/installations/${installation.installationId}`;
+      const installationId = (installation as any).installationId ?? (installation as any).installation_id;
+      if (!installationId) {
+        console.warn('No installationId available for management link');
+        return;
+      }
+      const manageUrl = `https://github.com/settings/installations/${installationId}`;
       window.open(manageUrl, '_blank');
     }
   };

@@ -30,6 +30,22 @@ export interface GitHubInstallation {
   updatedAt: string;
 }
 
+function mapInstallationRow(row: any): GitHubInstallation {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    installationId: row.installation_id,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    targetLogin: row.target_login,
+    permissions: row.permissions || {},
+    appId: row.app_id,
+    suspendedAt: row.suspended_at ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 /**
  * Repository data from GitHub
  */
@@ -61,7 +77,11 @@ export async function getUserInstallation(userId: string): Promise<GitHubInstall
     throw new Error(`Failed to get user installation: ${error.message}`);
   }
 
-  return data as GitHubInstallation | null;
+  if (!data) {
+    return null;
+  }
+
+  return mapInstallationRow(data);
 }
 
 /**
@@ -99,7 +119,7 @@ export async function upsertInstallation(
     throw new Error(`Failed to upsert installation: ${error.message}`);
   }
 
-  return data as GitHubInstallation;
+  return mapInstallationRow(data);
 }
 
 /**
@@ -144,18 +164,18 @@ export async function getValidatedInstallation(installationId: number): Promise<
   const supabase = createClient();
 
   // Get installation from database
-  const { data: installation, error } = await supabase
+  const { data: installationRow, error } = await supabase
     .from('github_installations')
     .select('*')
     .eq('installation_id', installationId)
     .single();
 
-  if (error || !installation) {
+  if (error || !installationRow) {
     throw new InstallationNotFoundError(installationId);
   }
 
   // Check if suspended
-  if (installation.suspended_at) {
+  if (installationRow.suspended_at) {
     throw new GitHubAppError(
       `Installation ${installationId} is suspended`,
       'INSTALLATION_SUSPENDED',
@@ -173,7 +193,7 @@ export async function getValidatedInstallation(installationId: number): Promise<
   }
 
   return {
-    installation: installation as GitHubInstallation,
+    installation: mapInstallationRow(installationRow),
     github,
   };
 }
@@ -181,20 +201,26 @@ export async function getValidatedInstallation(installationId: number): Promise<
 /**
  * Sync user repositories from GitHub installation
  */
-export async function syncUserRepositories(userId: string): Promise<GitHubRepository[]> {
-  const installation = await getUserInstallation(userId);
-  if (!installation) {
+export async function syncUserRepositories(
+  userId: string,
+  installationIdOverride?: number
+): Promise<GitHubRepository[]> {
+  const installationRecord = await getUserInstallation(userId);
+  const resolvedInstallationId = installationIdOverride
+    ?? installationRecord?.installationId;
+
+  if (!resolvedInstallationId) {
     throw new Error('No GitHub installation found for user');
   }
 
   // Get repositories from GitHub
-  const githubRepos = await getInstallationRepositories(installation.installationId);
+  const githubRepos = await getInstallationRepositories(resolvedInstallationId);
 
   // Sync to database
   const supabase = createClient();
   const repoData = githubRepos.map(repo => ({
     user_id: userId,
-    installation_id: installation.installationId,
+    installation_id: resolvedInstallationId,
     github_repo_id: repo.id,
     name: repo.name,
     full_name: repo.full_name,
@@ -252,7 +278,7 @@ export async function findInstallationForRepository(
     throw new Error(`Failed to find installation for repository: ${error.message}`);
   }
 
-  return data?.github_installations as GitHubInstallation || null;
+  return data?.github_installations ? mapInstallationRow(data.github_installations) : null;
 }
 
 /**
@@ -348,7 +374,7 @@ export async function linkGitHubUser(
     });
 
     // Sync repositories
-    await syncUserRepositories(userId);
+    await syncUserRepositories(userId, installationId);
   } catch (error) {
     throw new Error(`Failed to link GitHub user: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
