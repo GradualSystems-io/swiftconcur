@@ -111,10 +111,45 @@ export default function GitHubInstallation() {
     }
   };
 
+  const resolveBasePath = () => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+
+    // Prefer build-time base path if exposed
+    // @ts-ignore - Next.js injects runtime config for basePath
+    const runtimeBase: string | undefined = window.__NEXT_DATA__?.config?.basePath;
+    if (runtimeBase && runtimeBase !== '/') {
+      return runtimeBase.replace(/\/$/, '');
+    }
+
+    // Fallback: infer from current pathname (e.g. /SwiftConcur/repositories)
+    const pathname = window.location.pathname || '';
+    const markers = ['/repositories', '/settings', '/profile', '/dashboard', '/billing'];
+    for (const marker of markers) {
+      const index = pathname.indexOf(marker);
+      if (index > 0) {
+        return pathname.slice(0, index);
+      }
+    }
+
+    return '';
+  };
+
+  const buildCallbackUrl = () => {
+    if (process.env.NEXT_PUBLIC_APP_URL) {
+      return `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')}/api/github/install`;
+    }
+
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const basePath = resolveBasePath();
+    return `${origin}${basePath}/api/github/install`;
+  };
+
   const handleInstallApp = () => {
     // Generate installation URL
     const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG || 'swiftconcur-ci';
-    const callbackUrl = `${window.location.origin}/api/github/install`;
+    const callbackUrl = buildCallbackUrl();
     const installUrl = `https://github.com/apps/${appSlug}/installations/new?state=${encodeURIComponent(callbackUrl)}`;
     
     window.location.href = installUrl;
