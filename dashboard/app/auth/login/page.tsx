@@ -9,21 +9,52 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Github, Mail } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
+  const resolveBasePath = () => {
+    if (process.env.NEXT_PUBLIC_BASE_PATH) {
+      return process.env.NEXT_PUBLIC_BASE_PATH;
+    }
+
+    if (typeof window !== 'undefined') {
+      const loginPath = '/auth/login';
+      const currentPath = window.location.pathname || '/';
+
+      if (currentPath.endsWith(loginPath)) {
+        const candidate = currentPath.slice(0, currentPath.length - loginPath.length);
+        return candidate || '';
+      }
+    }
+
+    return '';
+  };
+
+  const normalizeBasePath = (value: string) => {
+    if (!value || value === '/') return '';
+    return value.startsWith('/') ? value : `/${value}`;
+  };
+
+  const initialBasePath = normalizeBasePath(resolveBasePath());
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [redirectTo, setRedirectTo] = useState('/');
-  const router = useRouter();
+  const [basePath, setBasePath] = useState<string>(initialBasePath);
+  const defaultRedirectTarget = basePath ? basePath : '/';
+  const [redirectTo, setRedirectTo] = useState(defaultRedirectTarget);
   const supabase = createClient();
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
 
   useEffect(() => {
-    // Check for error or message in URL params
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    // Derive the deployed base path so redirects stay within the app scope
+    const normalizedBase = normalizeBasePath(resolveBasePath());
+    setBasePath(normalizedBase);
+
     const urlParams = new URLSearchParams(window.location.search);
     const urlError = urlParams.get('error');
     const urlMessage = urlParams.get('message');
@@ -36,26 +67,31 @@ export default function LoginPage() {
       setMessage(decodeURIComponent(urlMessage));
     }
 
+    const defaultTarget = normalizedBase || '/';
+    const loginPaths = [
+      `${normalizedBase || ''}/auth/login`,
+      '/auth/login',
+    ];
+
     const sanitizeRedirect = (value: string | null) => {
-      if (!value) return '/';
+      if (!value) return defaultTarget;
 
       try {
         const resolved = new URL(value, window.location.origin);
 
         if (resolved.origin !== window.location.origin) {
-          return '/';
+          return defaultTarget;
         }
 
-        const path = `${resolved.pathname}${resolved.search}${resolved.hash}` || '/';
+        const path = `${resolved.pathname}${resolved.search}${resolved.hash}` || defaultTarget;
 
-        // Prevent redirect loops back to the login page
-        if (path.startsWith('/auth/login')) {
-          return '/';
+        if (loginPaths.some(loginPath => path === loginPath || path.startsWith(`${loginPath}?`))) {
+          return defaultTarget;
         }
 
         return path;
       } catch {
-        return '/';
+        return defaultTarget;
       }
     };
 
@@ -78,7 +114,11 @@ export default function LoginPage() {
         setError(error.message);
       } else {
         console.log('Login successful:', data.user?.email, 'Email confirmed:', data.user?.email_confirmed_at);
-        window.location.href = redirectTo || '/';
+        const target = redirectTo 
+          || defaultRedirectTarget 
+          || normalizeBasePath(resolveBasePath()) 
+          || '/';
+        window.location.href = target;
       }
     } catch (err) {
       console.error('Login exception:', err);
@@ -93,17 +133,31 @@ export default function LoginPage() {
     setError('');
 
     try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const normalizedBasePath = basePath || normalizeBasePath(resolveBasePath()) || '';
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL 
+        ?? (origin ? `${origin}${normalizedBasePath}` : `http://localhost:3000${normalizedBasePath}`);
+      const callbackPath = `${normalizedBasePath}/auth/callback`;
+      const nextTarget = redirectTo 
+        || defaultRedirectTarget 
+        || normalizedBasePath 
+        || '/';
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
           redirectTo: (() => {
             try {
-              const callbackUrl = new URL('/SwiftConcur/auth/callback', siteUrl);
-              callbackUrl.searchParams.set('next', redirectTo || '/');
+              const callbackUrl = new URL(
+                callbackPath.startsWith('/') ? callbackPath : `/${callbackPath}`,
+                siteUrl
+              );
+              callbackUrl.searchParams.set('next', nextTarget);
               return callbackUrl.toString();
             } catch (exception) {
               console.warn('Failed to construct OAuth redirect URL:', exception);
-              return `${siteUrl}/SwiftConcur/auth/callback`;
+              const fallbackPath = callbackPath.startsWith('/') ? callbackPath : `/${callbackPath}`;
+              return `${siteUrl.replace(/\/$/, '')}${fallbackPath}`;
             }
           })(),
         },
