@@ -210,6 +210,11 @@ export async function syncUserRepositories(
     ?? installationRecord?.installationId;
 
   if (!resolvedInstallationId) {
+    console.error('syncUserRepositories missing installation id', {
+      userId,
+      installationIdOverride,
+      installationRecord,
+    });
     throw new Error('No GitHub installation found for user');
   }
 
@@ -362,10 +367,11 @@ export async function linkGitHubUser(
   try {
     // Get installation details from GitHub
     const github = await getInstallation(installationId);
+    const resolvedInstallationId = github.id ?? installationId;
     
     // Store installation in database
     await upsertInstallation(userId, {
-      installationId,
+      installationId: resolvedInstallationId,
       targetType: github.target_type as 'User' | 'Organization',
       targetId: github.target_id,
       targetLogin: github.account.login,
@@ -374,7 +380,7 @@ export async function linkGitHubUser(
     });
 
     // Sync repositories
-    await syncUserRepositories(userId, installationId);
+    await syncUserRepositories(userId, resolvedInstallationId);
   } catch (error) {
     throw new Error(`Failed to link GitHub user: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
