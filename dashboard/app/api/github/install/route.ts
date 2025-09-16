@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
 
       // Re-sync repositories to pick up changes
       const { syncUserRepositories } = await import('@/lib/github/auth');
-      await syncUserRepositories(user.id);
+      await syncUserRepositories(user.id, installationIdNum);
 
       // Redirect to dashboard with update message
       return NextResponse.redirect(`${dashboardUrl}?installation=updated`);
