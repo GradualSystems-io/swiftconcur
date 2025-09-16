@@ -107,8 +107,17 @@ export async function getInstallation(installationId: number) {
 export async function getInstallationRepositories(installationId: number) {
   try {
     const installationClient = await createInstallationClient(installationId);
-    const { data } = await installationClient.rest.apps.listReposAccessibleToInstallation();
-    return data.repositories;
+    if (installationClient.rest?.apps?.listReposAccessibleToInstallation) {
+      const { data } = await installationClient.rest.apps.listReposAccessibleToInstallation();
+      return data.repositories;
+    }
+
+    const { data } = await installationClient.request({
+      method: 'GET',
+      url: '/installation/repositories',
+    });
+
+    return (data as any).repositories ?? [];
   } catch (error) {
     throw new Error(`Failed to get installation repositories: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
