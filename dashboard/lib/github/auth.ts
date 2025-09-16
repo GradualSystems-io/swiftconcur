@@ -3,7 +3,9 @@
  * Handles installation tokens, user linking, and permissions
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/lib/supabase/types';
 import { 
   getInstallation, 
   getInstallationRepositories,
@@ -29,6 +31,8 @@ export interface GitHubInstallation {
   createdAt: string;
   updatedAt: string;
 }
+
+type SupabaseDBClient = SupabaseClient<Database>;
 
 function mapInstallationRow(row: any): GitHubInstallation {
   return {
@@ -64,8 +68,11 @@ export interface GitHubRepository {
 /**
  * Get user's GitHub installation from database
  */
-export async function getUserInstallation(userId: string): Promise<GitHubInstallation | null> {
-  const supabase = createClient();
+export async function getUserInstallation(
+  userId: string,
+  supabaseOverride?: SupabaseDBClient
+): Promise<GitHubInstallation | null> {
+  const supabase = supabaseOverride ?? createClient();
   
   const { data, error } = await supabase
     .from('github_installations')
@@ -96,9 +103,10 @@ export async function upsertInstallation(
     targetLogin: string;
     permissions: Record<string, string>;
     appId: number;
-  }
+  },
+  supabaseOverride?: SupabaseDBClient
 ): Promise<GitHubInstallation> {
-  const supabase = createClient();
+  const supabase = supabaseOverride ?? createClient();
 
   const { data, error } = await supabase
     .from('github_installations')
@@ -203,17 +211,31 @@ export async function getValidatedInstallation(installationId: number): Promise<
  */
 export async function syncUserRepositories(
   userId: string,
-  installationIdOverride?: number
+  installationIdOverride?: number,
+  supabaseOverride?: SupabaseDBClient
 ): Promise<GitHubRepository[]> {
-  const installationRecord = await getUserInstallation(userId);
-  const resolvedInstallationId = installationIdOverride
-    ?? installationRecord?.installationId;
+  const supabase = supabaseOverride ?? createClient();
+
+  let resolvedInstallationId = installationIdOverride;
+
+  if (!resolvedInstallationId) {
+    const { data, error } = await supabase
+      .from('github_installations')
+      .select('installation_id')
+      .eq('user_id', userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      throw new Error(`Failed to load user installation: ${error.message}`);
+    }
+
+    resolvedInstallationId = data?.installation_id;
+  }
 
   if (!resolvedInstallationId) {
     console.error('syncUserRepositories missing installation id', {
       userId,
       installationIdOverride,
-      installationRecord,
     });
     throw new Error('No GitHub installation found for user');
   }
@@ -222,7 +244,6 @@ export async function syncUserRepositories(
   const githubRepos = await getInstallationRepositories(resolvedInstallationId);
 
   // Sync to database
-  const supabase = createClient();
   const repoData = githubRepos.map(repo => ({
     user_id: userId,
     installation_id: resolvedInstallationId,
@@ -237,7 +258,7 @@ export async function syncUserRepositories(
   }));
 
   // Upsert repositories (update or insert)
-  const { data: syncedRepos, error } = await supabase
+  const { error } = await supabase
     .from('repositories')
     .upsert(repoData, {
       onConflict: 'installation_id,github_repo_id',
@@ -368,6 +389,7 @@ export async function linkGitHubUser(
     // Get installation details from GitHub
     const github = await getInstallation(installationId);
     const resolvedInstallationId = github.id ?? installationId;
+    const supabaseAdmin = createServiceRoleClient();
     
     // Store installation in database
     await upsertInstallation(userId, {
@@ -377,10 +399,10 @@ export async function linkGitHubUser(
       targetLogin: github.account.login,
       permissions: github.permissions,
       appId: github.app_id,
-    });
+    }, supabaseAdmin);
 
     // Sync repositories
-    await syncUserRepositories(userId, resolvedInstallationId);
+    await syncUserRepositories(userId, resolvedInstallationId, supabaseAdmin);
   } catch (error) {
     throw new Error(`Failed to link GitHub user: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
