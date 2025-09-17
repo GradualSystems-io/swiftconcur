@@ -181,14 +181,26 @@ export default function GitHubInstallation() {
       setError('');
       setSuccess('');
 
-      const response = await fetch('/api/github/sync', {
+      const basePath = resolveBasePath();
+      const syncPath = `${basePath || ''}/api/github/sync`;
+
+      const response = await fetch(syncPath, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to sync repositories');
+        let message = 'Failed to sync repositories';
+        try {
+          const errorData = await response.clone().json();
+          message = errorData.error || message;
+        } catch {
+          const raw = await response.text();
+          if (raw) {
+            message = raw.slice(0, 200);
+          }
+        }
+        throw new Error(message);
       }
 
       setSuccess('Repositories synced successfully!');
