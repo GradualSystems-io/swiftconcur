@@ -248,6 +248,7 @@ export async function syncUserRepositories(
     user_id: userId,
     installation_id: resolvedInstallationId,
     github_repo_id: repo.id,
+    github_id: repo.id,
     name: repo.name,
     full_name: repo.full_name,
     is_private: repo.private,
