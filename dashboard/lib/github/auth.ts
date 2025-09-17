@@ -270,6 +270,19 @@ export async function syncUserRepositories(
     throw new Error(`Failed to sync repositories: ${error.message}`);
   }
 
+  const { error: userUpdateError } = await supabase
+    .from('repositories')
+    .update({ user_id: userId })
+    .eq('installation_id', resolvedInstallationId);
+
+  if (userUpdateError) {
+    console.error('Failed to associate repositories with user', {
+      userId,
+      installationId: resolvedInstallationId,
+      error: userUpdateError,
+    });
+  }
+
   // Return in standard format
   return githubRepos.map(repo => ({
     id: repo.id,
