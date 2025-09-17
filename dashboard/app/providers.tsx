@@ -50,8 +50,40 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
-  const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/$/, '');
-  const loginPath = `${basePath || ''}/auth/login`;
+
+  const getLoginPath = () => {
+    const normalize = (value?: string | null) => {
+      if (!value) return '';
+      const trimmed = value.trim();
+      if (!trimmed || trimmed === '/') return '';
+      return trimmed.replace(/\/$/, '');
+    };
+
+    const envBase = normalize(process.env.NEXT_PUBLIC_BASE_PATH);
+    if (envBase) {
+      return `${envBase}/auth/login`;
+    }
+
+    if (typeof window !== 'undefined') {
+      const runtimeBase = normalize((window as any).__NEXT_DATA__?.config?.basePath);
+      if (runtimeBase) {
+        return `${runtimeBase}/auth/login`;
+      }
+
+      const pathname = window.location.pathname || '';
+      const authIndex = pathname.indexOf('/auth/');
+      if (authIndex > 0) {
+        return `${pathname.slice(0, authIndex)}/auth/login`;
+      }
+
+      const segments = pathname.split('/').filter(Boolean);
+      if (segments.length > 0) {
+        return `/${segments[0]}/auth/login`;
+      }
+    }
+
+    return '/auth/login';
+  };
   
   useEffect(() => {
     // Get initial session
@@ -111,7 +143,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (typeof window !== 'undefined') {
-        window.location.href = loginPath || '/auth/login';
+        window.location.href = getLoginPath();
       }
     } catch (error) {
       console.error('Sign out error:', error);
