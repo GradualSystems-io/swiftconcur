@@ -15,9 +15,7 @@ interface RepositoryResponse {
   stars_count: number | null;
   updated_at: string | null;
   github_repo_id: number | null;
-  github_installations?: {
-    target_login: string;
-  } | null;
+  installation_id: number | null;
 }
 
 export default async function RepositoryDetailPage({
@@ -37,7 +35,7 @@ export default async function RepositoryDetailPage({
   const { data, error: repoError } = await supabase
     .from('repositories')
     .select(
-      `id, name, full_name, is_private, default_branch, language, stars_count, updated_at, github_repo_id, github_installations(target_login)`
+      `id, name, full_name, is_private, default_branch, language, stars_count, updated_at, github_repo_id, installation_id`
     )
     .eq('user_id', user!.id)
     .eq('full_name', fullName)
@@ -51,6 +49,21 @@ export default async function RepositoryDetailPage({
     notFound();
   }
 
+  let targetLogin: string | undefined;
+  if (data.installation_id) {
+    const { data: installationRow, error: installationError } = await supabase
+      .from('github_installations')
+      .select('target_login')
+      .eq('installation_id', data.installation_id)
+      .single<{ target_login: string }>();
+
+    if (!installationError) {
+      targetLogin = installationRow?.target_login;
+    } else if (installationError.code !== 'PGRST116') {
+      throw new Error(`Failed to load installation details: ${installationError.message}`);
+    }
+  }
+
   const lastUpdated = data.updated_at ? new Date(data.updated_at).toLocaleString() : 'Unknown';
   const repoUrl = data.full_name ? `https://github.com/${data.full_name}` : undefined;
 
@@ -60,7 +73,7 @@ export default async function RepositoryDetailPage({
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{data.full_name}</h1>
           <p className="text-muted-foreground">
-            Managed by {data.github_installations?.target_login ?? 'GitHub App'}
+            Managed by {targetLogin ?? 'GitHub App'}
           </p>
         </div>
         <div className="flex gap-2">
