@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Github, ExternalLink, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link';
 
 interface GitHubInstallation {
   id: string;
@@ -364,12 +365,12 @@ export default function GitHubInstallation() {
                     </div>
                   </div>
                   <Button variant="outline" size="sm" asChild>
-                    <a 
+                    <Link
                       href={`/repositories/${encodeURIComponent(repo.fullName)}`}
                       className="flex items-center gap-1"
                     >
                       View Details
-                    </a>
+                    </Link>
                   </Button>
                 </div>
               ))}
