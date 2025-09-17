@@ -24,54 +24,47 @@ export default async function DashboardPage() {
   }
 
   const supabase = createClient();
-  
-  // Fetch user's repositories with statistics
-  const { data: repos } = await supabase
-    .from('user_repos')
-    .select(`
-      repo_id,
-      repos (
-        id,
-        name,
-        tier
-      )
-    `)
-    .eq('user_id', user.id);
-  
-  // Transform repository data for RepoCard  
-  const repoData = repos?.map(repo => ({
-    id: repo.repo_id,
-    name: repo.repo_name,
-    tier: repo.repo_tier as 'free' | 'pro' | 'enterprise',
-    created_at: new Date().toISOString(),
-    github_id: 0,
-    full_name: repo.repo_name,
-    is_private: true,
+
+  const { data: repoRows, error: repoError } = await supabase
+    .from('repositories')
+    .select('id, name, full_name, is_private, default_branch, language, stars_count, updated_at, github_repo_id')
+    .eq('user_id', user.id)
+    .order('updated_at', { ascending: false });
+
+  if (repoError && repoError.code !== 'PGRST116') {
+    throw new Error(`Failed to load repositories: ${repoError.message}`);
+  }
+
+  const repoData = (repoRows ?? []).map((repo) => ({
+    id: repo.id || repo.github_repo_id?.toString() || repo.full_name,
+    name: repo.name || repo.full_name || 'Repository',
+    tier: 'free' as const,
+    created_at: repo.updated_at || new Date().toISOString(),
+    github_id: repo.github_repo_id || 0,
+    full_name: repo.full_name || repo.name || 'Unknown',
+    is_private: repo.is_private ?? true,
     webhook_secret: null,
     repo_stats: [{
-      repo_id: repo.repo_id,
+      repo_id: repo.id || repo.github_repo_id?.toString() || repo.full_name || 'repo',
       total_runs: 0,
-      total_warnings: repo.total_warnings || 0,
-      critical_warnings: repo.critical_warnings || 0,
+      total_warnings: 0,
+      critical_warnings: 0,
       high_warnings: 0,
-      last_run_at: repo.last_run_at,
+      last_run_at: repo.updated_at,
       trend_7d: 0,
       trend_30d: 0,
       avg_warnings_per_run: 0,
-      success_rate: 85,
-    }]
-  })) || [];
-  
-  // Calculate aggregate statistics
-  const totalWarnings = repos?.reduce((sum, repo) => sum + (repo.total_warnings || 0), 0) || 0;
-  const criticalWarnings = repos?.reduce((sum, repo) => sum + (repo.critical_warnings || 0), 0) || 0;
-  const activeRepos = repos?.filter(repo => 
-    repo.last_run_at && 
-    new Date(repo.last_run_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      success_rate: 100,
+    }],
+  }));
+
+  const totalWarnings = 0;
+  const criticalWarnings = 0;
+  const activeRepos = repoRows?.filter(repo =>
+    repo.updated_at && new Date(repo.updated_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
   ).length || 0;
-  
-  const successRate = totalWarnings > 0 ? 
-    Math.round((1 - criticalWarnings / totalWarnings) * 100) : 100;
+
+  const successRate = 100;
   
   // Mock warning type data for demonstration
   const warningTypeData = [
@@ -177,7 +170,7 @@ export default async function DashboardPage() {
               Your Repositories
             </h2>
             <p className="text-muted-foreground">
-              {repos?.length || 0} repositories configured
+              {repoData.length} repositories configured
             </p>
           </div>
           
