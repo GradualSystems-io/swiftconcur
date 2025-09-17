@@ -50,6 +50,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/$/, '');
+  const loginPath = `${basePath || ''}/auth/login`;
   
   useEffect(() => {
     // Get initial session
@@ -106,6 +108,10 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.removeItem(key);
           }
         });
+      }
+
+      if (typeof window !== 'undefined') {
+        window.location.href = loginPath || '/auth/login';
       }
     } catch (error) {
       console.error('Sign out error:', error);
