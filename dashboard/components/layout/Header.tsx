@@ -94,9 +94,10 @@ export function Header({ user, onMenuToggle, className }: HeaderProps) {
           </Button>
           
           {/* Help */}
-          <Button variant="ghost" size="icon">
-            <HelpCircle className="h-5 w-5" />
-            <span className="sr-only">Help</span>
+          <Button variant="ghost" size="icon" asChild>
+            <Link href="/docs" aria-label="Help & Documentation">
+              <HelpCircle className="h-5 w-5" />
+            </Link>
           </Button>
           
           {/* User Menu */}
