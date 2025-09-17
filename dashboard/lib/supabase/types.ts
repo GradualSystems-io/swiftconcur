@@ -38,21 +38,52 @@ export type Database = {
         Row: {
           id: string;
           run_id: string;
-          file_path: string;
-          line_number: number;
-          column_number: number | null;
           type: 'actor_isolation' | 'sendable' | 'data_race' | 'performance';
           severity: 'critical' | 'high' | 'medium' | 'low';
+          file_path: string;
+          line_number: number | null;
+          column_number: number | null;
           message: string;
-          code_context: {
-            before: string[];
-            line: string;
-            after: string[];
-          };
-          suggested_fix: string | null;
+          code_context: Record<string, unknown> | null;
+          created_at: string;
         };
-        Insert: Omit<Row, 'id'>;
-        Update: Partial<Insert>;
+        Insert: Omit<Database['public']['Tables']['warnings']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['warnings']['Insert']>;
+      };
+      warning_runs: {
+        Row: {
+          id: string;
+          repository_id: string;
+          commit_sha: string | null;
+          branch: string | null;
+          pull_request: number | null;
+          total_warnings: number;
+          new_warnings: number;
+          fixed_warnings: number;
+          critical_warnings: number;
+          build_time_seconds: number | null;
+          report_url: string | null;
+          analysis_summary: string | null;
+          created_at: string;
+          completed_at: string | null;
+        };
+        Insert: Omit<Database['public']['Tables']['warning_runs']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['warning_runs']['Insert']>;
+      };
+      repository_warning_daily: {
+        Row: {
+          repository_id: string;
+          date: string;
+          run_count: number;
+          total_warnings: number;
+          new_warnings: number;
+          fixed_warnings: number;
+          critical_warnings: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Database['public']['Tables']['repository_warning_daily']['Row'];
+        Update: Partial<Database['public']['Tables']['repository_warning_daily']['Insert']>;
       };
       repo_warning_daily: {
         Row: {

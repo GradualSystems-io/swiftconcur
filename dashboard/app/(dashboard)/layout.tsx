@@ -17,17 +17,20 @@ export default async function DashboardLayout({
   
   const supabase = createClient();
   
-  // Get user's repositories with security checks
-  const { data: repos } = await supabase
-    .from('user_repos')
-    .select('repo_id, repos(id, name)')
+  // Fetch repositories for the sidebar navigation
+  const { data: repoRows, error: repoError } = await supabase
+    .from('repositories')
+    .select('id, full_name, name')
     .eq('user_id', user.id)
-    .order('repos(name)');
-  
-  // Transform for sidebar compatibility
-  const repoList = repos?.map(r => ({
-    id: r.repo_id,
-    name: r.repos?.name || 'Unknown',
+    .order('full_name');
+
+  if (repoError && repoError.code !== 'PGRST116') {
+    console.error('Failed to load repositories for sidebar:', repoError.message);
+  }
+
+  const repoList = repoRows?.map((repo) => ({
+    id: repo.id,
+    name: repo.full_name || repo.name || 'Repository',
   })) || [];
   
   return (

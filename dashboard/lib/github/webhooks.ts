@@ -307,15 +307,23 @@ export async function handleSwiftConcurWarningEvent(
     }
 
     // Store warning run data
+    const warningsList = swiftconcur.warnings || [];
+    const criticalWarnings = warningsList.filter(warning => warning.severity === 'critical').length;
+
     const { data: warningRun, error: runError } = await supabase
       .from('warning_runs')
       .insert({
         repository_id: repoData.id,
         commit_sha: workflow_run?.head_sha,
         branch: workflow_run?.head_branch,
-        pull_request: null, // TODO: Extract from payload if available
+        pull_request: swiftconcur.pull_request_number ?? null,
         total_warnings: swiftconcur.warning_count,
+        new_warnings: swiftconcur.new_warnings ?? 0,
+        fixed_warnings: swiftconcur.fixed_warnings ?? 0,
+        critical_warnings: criticalWarnings,
         build_time_seconds: swiftconcur.build_time_seconds,
+        report_url: swiftconcur.json_report_path ?? null,
+        analysis_summary: swiftconcur.summary ?? null,
       })
       .select()
       .single();
@@ -325,8 +333,8 @@ export async function handleSwiftConcurWarningEvent(
     }
 
     // Store individual warnings if provided
-    if (swiftconcur.warnings && swiftconcur.warnings.length > 0) {
-      const warningData = swiftconcur.warnings.map(warning => ({
+    if (warningsList.length > 0) {
+      const warningData = warningsList.map(warning => ({
         run_id: warningRun.id,
         type: warning.warning_type,
         severity: warning.severity,
@@ -334,7 +342,7 @@ export async function handleSwiftConcurWarningEvent(
         line_number: warning.line_number,
         column_number: null,
         message: warning.message,
-        code_context: null,
+        code_context: warning.code_context ?? null,
       }));
 
       const { error: warningsError } = await supabase
@@ -378,6 +386,56 @@ export async function handleSwiftConcurWarningEvent(
       } catch (statusError) {
         console.error('Failed to set commit status:', statusError);
         // Don't throw - data storage is more important
+      }
+    }
+
+    // Update daily aggregates
+    const runDate = new Date(
+      workflow_run?.created_at || workflow_run?.updated_at || new Date().toISOString()
+    )
+      .toISOString()
+      .split('T')[0];
+
+    const { data: existingDaily, error: dailyError } = await supabase
+      .from('repository_warning_daily')
+      .select('*')
+      .eq('repository_id', repoData.id)
+      .eq('date', runDate)
+      .maybeSingle();
+
+    if (dailyError && dailyError.code !== 'PGRST116') {
+      console.error('Failed to load repository_warning_daily row:', dailyError);
+    } else if (existingDaily) {
+      const { error: updateDailyError } = await supabase
+        .from('repository_warning_daily')
+        .update({
+          run_count: existingDaily.run_count + 1,
+          total_warnings: existingDaily.total_warnings + swiftconcur.warning_count,
+          new_warnings: existingDaily.new_warnings + (swiftconcur.new_warnings ?? 0),
+          fixed_warnings: existingDaily.fixed_warnings + (swiftconcur.fixed_warnings ?? 0),
+          critical_warnings: existingDaily.critical_warnings + criticalWarnings,
+        })
+        .eq('repository_id', repoData.id)
+        .eq('date', runDate);
+
+      if (updateDailyError) {
+        console.error('Failed to update repository_warning_daily:', updateDailyError);
+      }
+    } else {
+      const { error: insertDailyError } = await supabase
+        .from('repository_warning_daily')
+        .insert({
+          repository_id: repoData.id,
+          date: runDate,
+          run_count: 1,
+          total_warnings: swiftconcur.warning_count,
+          new_warnings: swiftconcur.new_warnings ?? 0,
+          fixed_warnings: swiftconcur.fixed_warnings ?? 0,
+          critical_warnings: criticalWarnings,
+        });
+
+      if (insertDailyError) {
+        console.error('Failed to insert repository_warning_daily:', insertDailyError);
       }
     }
 
