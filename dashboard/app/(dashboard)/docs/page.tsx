@@ -158,6 +158,205 @@ jobs:
         </CardContent>
       </Card>
 
+      {/* Analytics Webhook */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Info className="h-5 w-5" />
+            Enable Dashboard Analytics
+          </CardTitle>
+          <CardDescription>
+            Send SwiftConcur run results back to the dashboard so the analytics tab can track health trends
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ol className="space-y-3 text-sm text-muted-foreground">
+            <li>
+              <strong>Create a webhook secret:</strong> add <code className="bg-muted px-1 py-0.5 rounded">GITHUB_WEBHOOK_SECRET</code> (or choose your own name) to your repository or organisation secrets. Use the same value that is configured for the GitHub App in the dashboard.
+            </li>
+            <li>
+              <strong>Append a dashboard step:</strong> after the SwiftConcur action, add a step that posts the results to <code className="bg-muted px-1 py-0.5 rounded">https://gradualsystems.io/SwiftConcur/api/github/webhook</code>. This ensures data lands in <code className="bg-muted px-1 py-0.5 rounded">warning_runs</code>, <code className="bg-muted px-1 py-0.5 rounded">warnings</code> and <code className="bg-muted px-1 py-0.5 rounded">repository_warning_daily</code> for the Analytics page.
+            </li>
+            <li>
+              <strong>Verify installs:</strong> runs must execute inside the GitHub App installation context so <code className="bg-muted px-1 py-0.5 rounded">github.event.installation.id</code> is populated. That value is required to associate runs with the correct repository in Supabase.
+            </li>
+          </ol>
+
+          <div className="relative">
+            <pre className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg overflow-x-auto text-sm">
+{`      - name: Send data to Dashboard
+        if: always()
+        env:
+          WEBHOOK_SECRET: \\${{ secrets.GITHUB_WEBHOOK_SECRET }}
+        run: |
+          INSTALLATION_ID="\\${{ github.event.installation.id }}"
+          if [ -z "$INSTALLATION_ID" ]; then
+            echo "Skipping analytics webhook: missing installation id"
+            exit 0
+          fi
+
+          WARNING_COUNT="\\${{ steps.swiftconcur.outputs.warning-count || 0 }}"
+          NEW_WARNINGS="\\${{ steps.swiftconcur.outputs.new-warnings || 0 }}"
+          FIXED_WARNINGS="\\${{ steps.swiftconcur.outputs.fixed-warnings || 0 }}"
+          BUILD_TIME="\\${{ steps.swiftconcur.outputs.build-time-seconds || 0 }}"
+
+          JSON_REPORT="\\${{ steps.swiftconcur.outputs.json-report }}"
+          WARNINGS_JSON='[]'
+          if [ -f "$JSON_REPORT" ]; then
+            WARNINGS_JSON=$(jq -c '.warnings // []' "$JSON_REPORT" 2>/dev/null || echo '[]')
+          fi
+
+          SUMMARY_MD="\\${{ steps.swiftconcur.outputs.summary-markdown }}"
+          SUMMARY_TEXT="SwiftConcur detected $WARNING_COUNT warnings"
+          if [ -f "$SUMMARY_MD" ]; then
+            SUMMARY_TEXT=$(head -n 200 "$SUMMARY_MD")
+          fi
+
+          jq -n \
+            --argjson installation_id "$INSTALLATION_ID" \
+            --arg repo_id "\\${{ github.event.repository.id }}" \
+            --arg repo_name "\\${{ github.event.repository.name }}" \
+            --arg repo_full "\\${{ github.repository }}" \
+            --argjson repo_private "\\${{ github.event.repository.private }}" \
+            --arg repo_default_branch "\\${{ github.event.repository.default_branch }}" \
+            --arg head_sha "\\${{ github.sha }}" \
+            --arg head_branch "\\${{ github.ref_name }}" \
+            --arg workflow_url "\\${{ github.server_url }}/${{ github.repository }}/actions/runs/\\${{ github.run_id }}" \
+            --argjson warning_count "$WARNING_COUNT" \
+            --argjson new_warnings "$NEW_WARNINGS" \
+            --argjson fixed_warnings "$FIXED_WARNINGS" \
+            --argjson build_time "$BUILD_TIME" \
+            --arg summary "$SUMMARY_TEXT" \
+            --arg json_report "$JSON_REPORT" \
+            --argjson warnings "$WARNINGS_JSON" \
+            '{
+              action: "warning_report",
+              installation: { id: $installation_id },
+              repository: {
+                id: ($repo_id | tonumber),
+                name: $repo_name,
+                full_name: $repo_full,
+                private: $repo_private,
+                default_branch: $repo_default_branch
+              },
+              workflow_run: {
+                head_sha: $head_sha,
+                head_branch: $head_branch,
+                conclusion: "success",
+                html_url: $workflow_url
+              },
+              swiftconcur: {
+                warning_count: $warning_count,
+                new_warnings: $new_warnings,
+                fixed_warnings: $fixed_warnings,
+                build_time_seconds: $build_time,
+                summary: $summary,
+                json_report_path: $json_report,
+                warnings: $warnings
+              }
+            }' > /tmp/swiftconcur_payload.json
+
+          SIG_HEADER=""
+          if [ -n "$WEBHOOK_SECRET" ]; then
+            SIG_VALUE=$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" /tmp/swiftconcur_payload.json | awk '{print $NF}')
+            SIG_HEADER="-H \"X-Hub-Signature-256: sha256=$SIG_VALUE\""
+          fi
+
+          eval curl -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: swiftconcur_warning" \
+            -H "X-GitHub-Delivery: swiftconcur-\\${{ github.run_id }}" \
+            -H "User-Agent: GitHub-Actions" \
+            $SIG_HEADER \
+            --data '@/tmp/swiftconcur_payload.json' \
+            --fail --silent --show-error || echo "Analytics webhook failed"
+`}
+            <CopyButton
+              text={`      # ...existing steps...
+      - name: Send data to Dashboard
+        if: always()
+        env:
+          WEBHOOK_SECRET: \\${{ secrets.GITHUB_WEBHOOK_SECRET }}
+        run: |
+          INSTALLATION_ID="\\${{ github.event.installation.id }}"
+          if [ -z "$INSTALLATION_ID" ]; then
+            echo "Skipping analytics webhook: missing installation id"
+            exit 0
+          fi
+
+          WARNING_COUNT="\\${{ steps.swiftconcur.outputs.warning-count || 0 }}"
+          NEW_WARNINGS="\\${{ steps.swiftconcur.outputs.new-warnings || 0 }}"
+          FIXED_WARNINGS="\\${{ steps.swiftconcur.outputs.fixed-warnings || 0 }}"
+          BUILD_TIME="\\${{ steps.swiftconcur.outputs.build-time-seconds || 0 }}"
+          JSON_REPORT="\\${{ steps.swiftconcur.outputs.json-report }}"
+          WARNINGS_JSON='[]'
+          if [ -f "$JSON_REPORT" ]; then
+            WARNINGS_JSON=$(jq -c '.warnings // []' "$JSON_REPORT" 2>/dev/null || echo '[]')
+          fi
+
+          SUMMARY_MD="\\${{ steps.swiftconcur.outputs.summary-markdown }}"
+          SUMMARY_TEXT="SwiftConcur detected $WARNING_COUNT warnings"
+          if [ -f "$SUMMARY_MD" ]; then
+            SUMMARY_TEXT=$(head -n 200 "$SUMMARY_MD")
+          fi
+
+          jq -n --argjson installation_id "$INSTALLATION_ID" --arg repo_id "\\${{ github.event.repository.id }}" --arg repo_name "\\${{ github.event.repository.name }}" --arg repo_full "\\${{ github.repository }}" --argjson repo_private "\\${{ github.event.repository.private }}" --arg repo_default_branch "\\${{ github.event.repository.default_branch }}" --arg head_sha "\\${{ github.sha }}" --arg head_branch "\\${{ github.ref_name }}" --arg workflow_url "\\${{ github.server_url }}/${{ github.repository }}/actions/runs/\\${{ github.run_id }}" --argjson warning_count "$WARNING_COUNT" --argjson new_warnings "$NEW_WARNINGS" --argjson fixed_warnings "$FIXED_WARNINGS" --argjson build_time "$BUILD_TIME" --arg summary "$SUMMARY_TEXT" --arg json_report "$JSON_REPORT" --argjson warnings "$WARNINGS_JSON" '{
+            action: "warning_report",
+            installation: { id: $installation_id },
+            repository: {
+              id: ($repo_id | tonumber),
+              name: $repo_name,
+              full_name: $repo_full,
+              private: $repo_private,
+              default_branch: $repo_default_branch
+            },
+            workflow_run: {
+              head_sha: $head_sha,
+              head_branch: $head_branch,
+              conclusion: "success",
+              html_url: $workflow_url
+            },
+            swiftconcur: {
+              warning_count: $warning_count,
+              new_warnings: $new_warnings,
+              fixed_warnings: $fixed_warnings,
+              build_time_seconds: $build_time,
+              summary: $summary,
+              json_report_path: $json_report,
+              warnings: $warnings
+            }
+          }' > /tmp/swiftconcur_payload.json
+
+          SIG_HEADER=""
+          if [ -n "$WEBHOOK_SECRET" ]; then
+            SIG_VALUE=$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" /tmp/swiftconcur_payload.json | awk '{print $NF}')
+            SIG_HEADER="-H \"X-Hub-Signature-256: sha256=$SIG_VALUE\""
+          fi
+
+          eval curl -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: swiftconcur_warning" \
+            -H "X-GitHub-Delivery: swiftconcur-\\${{ github.run_id }}" \
+            -H "User-Agent: GitHub-Actions" \
+            $SIG_HEADER \
+            --data '@/tmp/swiftconcur_payload.json' \
+            --fail --silent --show-error || echo "Analytics webhook failed"
+`}
+              className="absolute top-2 right-2"
+            />
+          </div>
+
+          <div className="text-sm text-muted-foreground space-y-2">
+            <p>
+              <strong>Tip:</strong> keep all of these commands inside the same workflow job that runs the SwiftConcur action so the step outputs (warning counts, summary, report path) are available.
+            </p>
+            <p>
+              Once the step runs successfully you&apos;ll see data in the Analytics tab within a minute of each workflow finishing.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Warning Types */}
       <Card>
         <CardHeader>
