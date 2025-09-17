@@ -49,12 +49,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${dashboardUrl}?installation=success`);
 
     } else if (setupAction === 'update') {
-      // Installation updated - refresh repository sync
+      // Installation updated - ensure data stays in sync
       console.log(`Updating installation ${installationIdNum} for user ${user.id}`);
 
-      // Re-sync repositories to pick up changes
-      const { syncUserRepositories } = await import('@/lib/github/auth');
-      await syncUserRepositories(user.id, installationIdNum);
+      await linkGitHubUser(user.id, 0, installationIdNum);
 
       // Redirect to dashboard with update message
       return NextResponse.redirect(`${dashboardUrl}?installation=updated`);
