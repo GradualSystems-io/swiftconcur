@@ -190,9 +190,11 @@ jobs:
           WEBHOOK_SECRET: \\${{ secrets.GITHUB_WEBHOOK_SECRET }}
         run: |
           INSTALLATION_ID="\\${{ github.event.installation.id }}"
-          if [ -z "$INSTALLATION_ID" ]; then
-            echo "Skipping analytics webhook: missing installation id"
-            exit 0
+          INSTALLATION_JSON=null
+          if [ -n "$INSTALLATION_ID" ]; then
+            INSTALLATION_JSON=$INSTALLATION_ID
+          else
+            echo "ℹ️ No installation id on this event; proceeding without it."
           fi
 
           WARNING_COUNT="\\${{ steps.swiftconcur.outputs.warning-count || 0 }}"
@@ -207,13 +209,13 @@ jobs:
           fi
 
           SUMMARY_MD="\\${{ steps.swiftconcur.outputs.summary-markdown }}"
-          SUMMARY_TEXT="SwiftConcur detected $WARNING_COUNT warnings"
+          SUMMARY_TEXT="SwiftConcur detected $WARNING_COUNT warnings (new: $NEW_WARNINGS, fixed: $FIXED_WARNINGS)."
           if [ -f "$SUMMARY_MD" ]; then
             SUMMARY_TEXT=$(head -n 200 "$SUMMARY_MD")
           fi
 
           jq -n \
-            --argjson installation_id "$INSTALLATION_ID" \
+            --argjson installation_id "$INSTALLATION_JSON" \
             --arg repo_id "\\${{ github.event.repository.id }}" \
             --arg repo_name "\\${{ github.event.repository.name }}" \
             --arg repo_full "\\${{ github.repository }}" \
@@ -231,7 +233,7 @@ jobs:
             --argjson warnings "$WARNINGS_JSON" \
             '{
               action: "warning_report",
-              installation: { id: $installation_id },
+              installation: (if $installation_id == null then null else { id: $installation_id } end),
               repository: {
                 id: ($repo_id | tonumber),
                 name: $repo_name,
@@ -295,14 +297,14 @@ jobs:
           fi
 
           SUMMARY_MD="\\${{ steps.swiftconcur.outputs.summary-markdown }}"
-          SUMMARY_TEXT="SwiftConcur detected $WARNING_COUNT warnings"
+          SUMMARY_TEXT="SwiftConcur detected $WARNING_COUNT warnings (new: $NEW_WARNINGS, fixed: $FIXED_WARNINGS)."
           if [ -f "$SUMMARY_MD" ]; then
             SUMMARY_TEXT=$(head -n 200 "$SUMMARY_MD")
           fi
 
-          jq -n --argjson installation_id "$INSTALLATION_ID" --arg repo_id "\\${{ github.event.repository.id }}" --arg repo_name "\\${{ github.event.repository.name }}" --arg repo_full "\\${{ github.repository }}" --argjson repo_private "\\${{ github.event.repository.private }}" --arg repo_default_branch "\\${{ github.event.repository.default_branch }}" --arg head_sha "\\${{ github.sha }}" --arg head_branch "\\${{ github.ref_name }}" --arg workflow_url "\\${{ github.server_url }}/${{ github.repository }}/actions/runs/\\${{ github.run_id }}" --argjson warning_count "$WARNING_COUNT" --argjson new_warnings "$NEW_WARNINGS" --argjson fixed_warnings "$FIXED_WARNINGS" --argjson build_time "$BUILD_TIME" --arg summary "$SUMMARY_TEXT" --arg json_report "$JSON_REPORT" --argjson warnings "$WARNINGS_JSON" '{
+          jq -n --argjson installation_id "$INSTALLATION_JSON" --arg repo_id "\\${{ github.event.repository.id }}" --arg repo_name "\\${{ github.event.repository.name }}" --arg repo_full "\\${{ github.repository }}" --argjson repo_private "\\${{ github.event.repository.private }}" --arg repo_default_branch "\\${{ github.event.repository.default_branch }}" --arg head_sha "\\${{ github.sha }}" --arg head_branch "\\${{ github.ref_name }}" --arg workflow_url "\\${{ github.server_url }}/${{ github.repository }}/actions/runs/\\${{ github.run_id }}" --argjson warning_count "$WARNING_COUNT" --argjson new_warnings "$NEW_WARNINGS" --argjson fixed_warnings "$FIXED_WARNINGS" --argjson build_time "$BUILD_TIME" --arg summary "$SUMMARY_TEXT" --arg json_report "$JSON_REPORT" --argjson warnings "$WARNINGS_JSON" '{
             action: "warning_report",
-            installation: { id: $installation_id },
+            installation: (if $installation_id == null then null else { id: $installation_id } end),
             repository: {
               id: ($repo_id | tonumber),
               name: $repo_name,

@@ -88,7 +88,7 @@ export interface SwiftConcurWarningPayload extends WebhookPayload {
  * Store webhook event for audit trail
  */
 async function storeWebhookEvent(
-  installationId: number,
+  installationId: number | null,
   deliveryId: string,
   eventType: string,
   action: string | undefined,
@@ -277,13 +277,14 @@ export async function handleSwiftConcurWarningEvent(
   payload: SwiftConcurWarningPayload,
   deliveryId: string
 ): Promise<void> {
-  if (!payload.installation || !payload.repository) {
-    throw new Error('Installation or repository data missing from payload');
+  if (!payload.repository) {
+    throw new Error('Repository data missing from payload');
   }
 
-  const { installation, repository, swiftconcur, workflow_run } = payload;
+  const installationId = payload.installation?.id ?? null;
+  const { repository, swiftconcur, workflow_run } = payload;
   const eventId = await storeWebhookEvent(
-    installation.id,
+    installationId,
     deliveryId,
     'swiftconcur_warning',
     'warning_report',
@@ -295,12 +296,16 @@ export async function handleSwiftConcurWarningEvent(
     const supabase = createServiceRoleClient();
 
     // Find the repository in our database
-    const { data: repoData, error: repoError } = await supabase
+    let repoQuery = supabase
       .from('repositories')
       .select('id, user_id')
-      .eq('github_repo_id', repository.id)
-      .eq('installation_id', installation.id)
-      .single();
+      .eq('github_repo_id', repository.id);
+
+    if (installationId !== null) {
+      repoQuery = repoQuery.eq('installation_id', installationId);
+    }
+
+    const { data: repoData, error: repoError } = await repoQuery.single();
 
     if (repoError || !repoData) {
       throw new Error(`Repository not found in database: ${repository.full_name}`);
@@ -374,18 +379,20 @@ export async function handleSwiftConcurWarningEvent(
         description = `❌ ${warningCount} Swift concurrency warnings found`;
       }
 
-      try {
-        await setCommitStatus(
-          installation.id,
-          owner,
-          repo,
-          workflow_run.head_sha,
-          state,
-          description
-        );
-      } catch (statusError) {
-        console.error('Failed to set commit status:', statusError);
-        // Don't throw - data storage is more important
+      if (installationId !== null) {
+        try {
+          await setCommitStatus(
+            installationId,
+            owner,
+            repo,
+            workflow_run.head_sha,
+            state,
+            description
+          );
+        } catch (statusError) {
+          console.error('Failed to set commit status:', statusError);
+          // Don't throw - data storage is more important
+        }
       }
     }
 
