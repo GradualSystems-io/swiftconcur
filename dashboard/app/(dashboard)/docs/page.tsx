@@ -258,20 +258,26 @@ jobs:
               }
             }' > /tmp/swiftconcur_payload.json
 
-          SIG_HEADER=""
-          if [ -n "$WEBHOOK_SECRET" ]; then
+          if [ -z "$WEBHOOK_SECRET" ]; then
+            echo "⚠️ WEBHOOK_SECRET not set; skipping signature header."
+            curl -sS -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \
+              -H "Content-Type: application/json" \
+              -H "X-GitHub-Event: swiftconcur_warning" \
+              -H "X-GitHub-Delivery: swiftconcur-\\${{ github.run_id }}" \
+              -H "User-Agent: GitHub-Actions" \
+              --data '@/tmp/swiftconcur_payload.json' \
+              --fail || echo "Analytics webhook failed"
+          else
             SIG_VALUE=$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" /tmp/swiftconcur_payload.json | awk '{print $NF}')
-            SIG_HEADER="-H \"X-Hub-Signature-256: sha256=$SIG_VALUE\""
+            curl -sS -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \
+              -H "Content-Type: application/json" \
+              -H "X-GitHub-Event: swiftconcur_warning" \
+              -H "X-GitHub-Delivery: swiftconcur-\\${{ github.run_id }}" \
+              -H "X-Hub-Signature-256: sha256=$SIG_VALUE" \
+              -H "User-Agent: GitHub-Actions" \
+              --data '@/tmp/swiftconcur_payload.json' \
+              --fail || echo "Analytics webhook failed"
           fi
-
-          eval curl -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \
-            -H "Content-Type: application/json" \
-            -H "X-GitHub-Event: swiftconcur_warning" \
-            -H "X-GitHub-Delivery: swiftconcur-\\${{ github.run_id }}" \
-            -H "User-Agent: GitHub-Actions" \
-            $SIG_HEADER \
-            --data '@/tmp/swiftconcur_payload.json' \
-            --fail --silent --show-error || echo "Analytics webhook failed"
 `}
             <CopyButton
               text={`      # ...existing steps...
