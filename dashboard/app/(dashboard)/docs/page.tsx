@@ -4,6 +4,102 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { BookOpen, Github, ExternalLink, Copy, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 import Link from 'next/link';
 
+const analyticsWorkflowStep = String.raw`
+      - name: Send data to Dashboard
+        if: always()
+        env:
+          WEBHOOK_SECRET: \\${{ secrets.GITHUB_WEBHOOK_SECRET }}
+        run: |
+          INSTALLATION_ID="\\${{ github.event.installation.id }}"
+          INSTALLATION_JSON=null
+          if [ -n "\\$INSTALLATION_ID" ]; then
+            INSTALLATION_JSON=\\$INSTALLATION_ID
+          else
+            echo "ℹ️ No installation id on this event; proceeding without it."
+          fi
+
+          WARNING_COUNT="\\${{ steps.swiftconcur.outputs.warning-count || 0 }}"
+          NEW_WARNINGS="\\${{ steps.swiftconcur.outputs.new-warnings || 0 }}"
+          FIXED_WARNINGS="\\${{ steps.swiftconcur.outputs.fixed-warnings || 0 }}"
+          BUILD_TIME="\\${{ steps.swiftconcur.outputs.build-time-seconds || 0 }}"
+          JSON_REPORT="\\${{ steps.swiftconcur.outputs.json-report }}"
+          WARNINGS_JSON='[]'
+          if [ -f "\\$JSON_REPORT" ]; then
+            WARNINGS_JSON=$(jq -c '.warnings // []' "\\$JSON_REPORT" 2>/dev/null || echo '[]')
+          fi
+
+          SUMMARY_MD="\\${{ steps.swiftconcur.outputs.summary-markdown }}"
+          SUMMARY_TEXT="SwiftConcur detected \\$WARNING_COUNT warnings (new: \\$NEW_WARNINGS, fixed: \\$FIXED_WARNINGS)."
+          if [ -f "\\$SUMMARY_MD" ]; then
+            SUMMARY_TEXT=$(head -n 200 "\\$SUMMARY_MD")
+          fi
+
+          jq -n \\
+            --argjson installation_id "\\$INSTALLATION_JSON" \\
+            --arg repo_id "\\${{ github.event.repository.id }}" \\
+            --arg repo_name "\\${{ github.event.repository.name }}" \\
+            --arg repo_full "\\${{ github.repository }}" \\
+            --argjson repo_private "\\${{ github.event.repository.private }}" \\
+            --arg repo_default_branch "\\${{ github.event.repository.default_branch }}" \\
+            --arg head_sha "\\${{ github.sha }}" \\
+            --arg head_branch "\\${{ github.ref_name }}" \\
+            --arg workflow_url "\\${{ github.server_url }}/${{ github.repository }}/actions/runs/\\${{ github.run_id }}" \\
+            --argjson warning_count "\\$WARNING_COUNT" \\
+            --argjson new_warnings "\\$NEW_WARNINGS" \\
+            --argjson fixed_warnings "\\$FIXED_WARNINGS" \\
+            --argjson build_time "\\$BUILD_TIME" \\
+            --arg summary "\\$SUMMARY_TEXT" \\
+            --arg json_report "\\$JSON_REPORT" \\
+            --argjson warnings "\\$WARNINGS_JSON" \\
+            '{
+              action: "warning_report",
+              installation: (if $installation_id == null then null else { id: $installation_id } end),
+              repository: {
+                id: ($repo_id | tonumber),
+                name: $repo_name,
+                full_name: $repo_full,
+                private: $repo_private,
+                default_branch: $repo_default_branch
+              },
+              workflow_run: {
+                head_sha: $head_sha,
+                head_branch: $head_branch,
+                conclusion: "success",
+                html_url: $workflow_url
+              },
+              swiftconcur: {
+                warning_count: $warning_count,
+                new_warnings: $new_warnings,
+                fixed_warnings: $fixed_warnings,
+                build_time_seconds: $build_time,
+                summary: $summary,
+                json_report_path: $json_report,
+                warnings: $warnings
+              }
+            }' > /tmp/webhook_payload.json
+
+          if [ -z "\\$WEBHOOK_SECRET" ]; then
+            echo "⚠️ WEBHOOK_SECRET not set; skipping signature header."
+            curl -sS -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \\
+              -H "Content-Type: application/json" \\
+              -H "X-GitHub-Event: swiftconcur_warning" \\
+              -H "X-GitHub-Delivery: swiftconcur-\\${{ github.run_id }}" \\
+              -H "User-Agent: GitHub-Actions" \\
+              --data '@/tmp/webhook_payload.json' \\
+              --fail || echo "Analytics webhook failed"
+          else
+            SIG_VALUE=$(openssl dgst -sha256 -hmac "\\$WEBHOOK_SECRET" /tmp/webhook_payload.json | awk '{print $NF}')
+            curl -sS -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \\
+              -H "Content-Type: application/json" \\
+              -H "X-GitHub-Event: swiftconcur_warning" \\
+              -H "X-GitHub-Delivery: swiftconcur-\\${{ github.run_id }}" \\
+              -H "X-Hub-Signature-256: sha256=$SIG_VALUE" \\
+              -H "User-Agent: GitHub-Actions" \\
+              --data '@/tmp/webhook_payload.json' \\
+              --fail || echo "Analytics webhook failed"
+          fi
+`;
+
 export default function DocumentationPage() {
   return (
     <div className="space-y-8">
@@ -76,64 +172,10 @@ export default function DocumentationPage() {
           
           <div className="relative">
             <pre className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg overflow-x-auto text-sm">
-{`name: SwiftConcur CI
-
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  swift-concurrency-check:
-    runs-on: macos-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: SwiftConcur CI
-      uses: swiftconcur/swiftconcur-ci@v1
-      with:
-        # Required: Your app scheme
-        scheme: 'YourAppScheme'
-        
-        # Choose one: workspace or project
-        workspace-path: 'YourApp.xcworkspace'
-        # project-path: 'YourApp.xcodeproj'
-        
-        # Optional: Build configuration (default: Debug)
-        configuration: 'Debug'
-        
-        # Optional: Warning threshold (default: 0)
-        threshold: 0
-        
-        # Optional: Enable AI-powered summaries (Pro/Enterprise only)
-        ai-summaries: true`}
+{analyticsWorkflowStep}
             </pre>
             <CopyButton
-              text={`name: SwiftConcur CI
-
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  swift-concurrency-check:
-    runs-on: macos-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: SwiftConcur CI
-      uses: swiftconcur/swiftconcur-ci@v1
-      with:
-        scheme: 'YourAppScheme'
-        workspace-path: 'YourApp.xcworkspace'
-        configuration: 'Debug'
-        threshold: 0
-        ai-summaries: true`}
+              text={analyticsWorkflowStep}
               className="absolute top-2 right-2"
             />
           </div>
