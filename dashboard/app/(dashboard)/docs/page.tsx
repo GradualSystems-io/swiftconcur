@@ -8,7 +8,7 @@ const analyticsWorkflowStep = [
   '      - name: Send data to Dashboard',
   '        if: always()',
   '        env:',
-  '          WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET }}',
+  '          GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}',
   '        run: |',
   '          INSTALLATION_ID="${{ github.event.installation.id }}"',
   '          INSTALLATION_JSON=null',
@@ -78,8 +78,8 @@ const analyticsWorkflowStep = [
   '              }',
   "            }' > /tmp/webhook_payload.json",
   '',
-  '          if [ -z "$WEBHOOK_SECRET" ]; then',
-  '            echo "⚠️ WEBHOOK_SECRET not set; skipping signature header."',
+  '          if [ -z "$GH_WEBHOOK_SECRET" ]; then',
+  '            echo "⚠️ GH_WEBHOOK_SECRET not set; skipping signature header."',
   '            curl -sS -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \\',
   '              -H "Content-Type: application/json" \\',
   '              -H "X-GitHub-Event: swiftconcur_warning" \\',
@@ -88,7 +88,7 @@ const analyticsWorkflowStep = [
   "              --data '@/tmp/webhook_payload.json' \\",
   '              --fail || echo "Analytics webhook failed"',
   '          else',
-  '            SIG_VALUE=$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" /tmp/webhook_payload.json | awk \'{print $NF}\')',
+  '            SIG_VALUE=$(openssl dgst -sha256 -hmac "$GH_WEBHOOK_SECRET" /tmp/webhook_payload.json | awk \'{print $NF}\')',
   '            curl -sS -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \\',
   '              -H "Content-Type: application/json" \\',
   '              -H "X-GitHub-Event: swiftconcur_warning" \\',
@@ -105,7 +105,7 @@ const analyticsWebhookStep = [
   '      - name: Send data to Dashboard',
   '        if: always()',
   '        env:',
-  '          WEBHOOK_SECRET: \\\\${{ secrets.GITHUB_WEBHOOK_SECRET }}',
+  '          GH_WEBHOOK_SECRET: \\\\${{ secrets.GH_WEBHOOK_SECRET }}',
   '        run: |',
   '          INSTALLATION_ID="\\\\${{ github.event.installation.id }}"',
   '          INSTALLATION_JSON=null',
@@ -176,8 +176,8 @@ const analyticsWebhookStep = [
   '              }',
   "            }' > /tmp/swiftconcur_payload.json",
   '',
-  '          if [ -z "$WEBHOOK_SECRET" ]; then',
-  '            echo "⚠️ WEBHOOK_SECRET not set; skipping signature header."',
+  '          if [ -z "$GH_WEBHOOK_SECRET" ]; then',
+  '            echo "⚠️ GH_WEBHOOK_SECRET not set; skipping signature header."',
   '            curl -sS -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \\',
   '              -H "Content-Type: application/json" \\',
   '              -H "X-GitHub-Event: swiftconcur_warning" \\',
@@ -186,7 +186,7 @@ const analyticsWebhookStep = [
   "              --data '@/tmp/swiftconcur_payload.json' \\",
   '              --fail || echo "Analytics webhook failed"',
   '          else',
-  '            SIG_VALUE=$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" /tmp/swiftconcur_payload.json | awk \'{print $NF}\')',
+  '            SIG_VALUE=$(openssl dgst -sha256 -hmac "$GH_WEBHOOK_SECRET" /tmp/swiftconcur_payload.json | awk \'{print $NF}\')',
   '            curl -sS -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \\',
   '              -H "Content-Type: application/json" \\',
   '              -H "X-GitHub-Event: swiftconcur_warning" \\',
@@ -204,7 +204,7 @@ const analyticsWebhookWithGuard = [
   '      - name: Send data to Dashboard',
   '        if: always()',
   '        env:',
-  '          WEBHOOK_SECRET: \\\\${{ secrets.GITHUB_WEBHOOK_SECRET }}',
+  '          GH_WEBHOOK_SECRET: \\\\${{ secrets.GH_WEBHOOK_SECRET }}',
   '        run: |',
   '          INSTALLATION_ID="\\\\${{ github.event.installation.id }}"',
   '          if [ -z "$INSTALLATION_ID" ]; then',
@@ -256,8 +256,8 @@ const analyticsWebhookWithGuard = [
   "          }' > /tmp/swiftconcur_payload.json",
   '',
   '          SIG_HEADER=""',
-  '          if [ -n "$WEBHOOK_SECRET" ]; then',
-  '            SIG_VALUE=$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" /tmp/swiftconcur_payload.json | awk \'{print $NF}\')',
+  '          if [ -n "$GH_WEBHOOK_SECRET" ]; then',
+  '            SIG_VALUE=$(openssl dgst -sha256 -hmac "$GH_WEBHOOK_SECRET" /tmp/swiftconcur_payload.json | awk \'{print $NF}\')',
   '            SIG_HEADER="-H \\"X-Hub-Signature-256: sha256=$SIG_VALUE\\""',
   '          fi',
   '',
@@ -387,7 +387,7 @@ export default function DocumentationPage() {
         <CardContent className="space-y-4">
           <ol className="space-y-3 text-sm text-muted-foreground">
             <li>
-              <strong>Create a webhook secret:</strong> add <code className="bg-muted px-1 py-0.5 rounded">GITHUB_WEBHOOK_SECRET</code> (or choose your own name) to your repository or organisation secrets. Use the same value that is configured for the GitHub App in the dashboard.
+              <strong>Create a webhook secret:</strong> add <code className="bg-muted px-1 py-0.5 rounded">GH_WEBHOOK_SECRET</code> (or choose your own name) to your repository or organisation secrets and keep it in sync with the <code className="bg-muted px-1 py-0.5 rounded">GITHUB_WEBHOOK_SECRET</code> value you deploy on Vercel.
             </li>
             <li>
               <strong>Append a dashboard step:</strong> after the SwiftConcur action, add a step that posts the results to <code className="bg-muted px-1 py-0.5 rounded">https://gradualsystems.io/SwiftConcur/api/github/webhook</code>. This ensures data lands in <code className="bg-muted px-1 py-0.5 rounded">warning_runs</code>, <code className="bg-muted px-1 py-0.5 rounded">warnings</code> and <code className="bg-muted px-1 py-0.5 rounded">repository_warning_daily</code> for the Analytics page.
