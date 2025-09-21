@@ -56,7 +56,7 @@ Both billing providers use secure webhook processing:
 - Integrates with Stripe's robust retry logic
 
 #### GitHub Marketplace Webhooks (`/api/github/marketplace/webhook`)
-- Signature verification with `GITHUB_WEBHOOK_SECRET`
+- Signature verification with `GH_WEBHOOK_SECRET`
 - Processes marketplace purchase events
 - Handles organization billing
 - Supports free trials and plan changes
@@ -159,7 +159,7 @@ STRIPE_PRO_PRICE_ID=price_...
 STRIPE_ENTERPRISE_PRICE_ID=price_...
 
 # GitHub Marketplace Configuration
-GITHUB_WEBHOOK_SECRET=your-webhook-secret
+GH_WEBHOOK_SECRET=your-webhook-secret
 NEXT_PUBLIC_GITHUB_APP_NAME=swiftconcur-ci
 
 # App Configuration
@@ -290,7 +290,7 @@ curl -H "Authorization: Bearer $GITHUB_TOKEN" \
   https://api.github.com/app/hook/deliveries
 
 # Verify signatures
-# Check GITHUB_WEBHOOK_SECRET matches GitHub App settings
+# Check GH_WEBHOOK_SECRET matches GitHub App settings
 ```
 
 #### Subscription Sync Issues

@@ -10,9 +10,9 @@ import { verify } from '@octokit/webhooks-methods';
 
 // Environment validation
 const requiredEnvVars = {
-  GITHUB_APP_ID: process.env.GITHUB_APP_ID,
-  GITHUB_APP_PRIVATE_KEY: process.env.GITHUB_APP_PRIVATE_KEY,
-  GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET,
+  GH_APP_ID: process.env.GH_APP_ID,
+  GH_APP_PRIVATE_KEY: process.env.GH_APP_PRIVATE_KEY,
+  GH_WEBHOOK_SECRET: process.env.GH_WEBHOOK_SECRET,
 } as const;
 
 for (const [key, value] of Object.entries(requiredEnvVars)) {
@@ -22,10 +22,10 @@ for (const [key, value] of Object.entries(requiredEnvVars)) {
 }
 
 // GitHub App configuration
-export const GITHUB_APP_CONFIG = {
-  appId: parseInt(requiredEnvVars.GITHUB_APP_ID!, 10),
-  privateKey: requiredEnvVars.GITHUB_APP_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-  webhookSecret: requiredEnvVars.GITHUB_WEBHOOK_SECRET!,
+export const GH_APP_CONFIG = {
+  appId: parseInt(requiredEnvVars.GH_APP_ID!, 10),
+  privateKey: requiredEnvVars.GH_APP_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+  webhookSecret: requiredEnvVars.GH_WEBHOOK_SECRET!,
   permissions: {
     contents: 'read',
     issues: 'write',
@@ -39,10 +39,10 @@ export const GITHUB_APP_CONFIG = {
  * GitHub App instance with authentication
  */
 export const githubApp = new App({
-  appId: GITHUB_APP_CONFIG.appId,
-  privateKey: GITHUB_APP_CONFIG.privateKey,
+  appId: GH_APP_CONFIG.appId,
+  privateKey: GH_APP_CONFIG.privateKey,
   webhooks: {
-    secret: GITHUB_APP_CONFIG.webhookSecret,
+    secret: GH_APP_CONFIG.webhookSecret,
   },
 });
 
@@ -65,8 +65,8 @@ export function createAppClient(): Octokit {
   return new Octokit({
     authStrategy: createAppAuth,
     auth: {
-      appId: GITHUB_APP_CONFIG.appId,
-      privateKey: GITHUB_APP_CONFIG.privateKey,
+      appId: GH_APP_CONFIG.appId,
+      privateKey: GH_APP_CONFIG.privateKey,
     },
   });
 }
@@ -79,7 +79,7 @@ export async function verifyWebhookSignature(
   signature: string
 ): Promise<boolean> {
   try {
-    return await verify(GITHUB_APP_CONFIG.webhookSecret, payload, signature);
+    return await verify(GH_APP_CONFIG.webhookSecret, payload, signature);
   } catch (error) {
     console.error('Webhook signature verification failed:', error);
     return false;
@@ -192,7 +192,7 @@ export async function validateInstallationPermissions(installationId: number): P
     const missing: string[] = [];
 
     // Check required permissions
-    const required = GITHUB_APP_CONFIG.permissions;
+    const required = GH_APP_CONFIG.permissions;
     
     for (const [permission, level] of Object.entries(required)) {
       const actual = permissions[permission as keyof typeof permissions];
@@ -214,7 +214,7 @@ export async function validateInstallationPermissions(installationId: number): P
  * Generate installation URL for users to install the app
  */
 export function generateInstallationUrl(repositoryIds?: number[]): string {
-  const baseUrl = `https://github.com/apps/${process.env.GITHUB_APP_SLUG || 'swiftconcur-ci'}/installations/new`;
+  const baseUrl = `https://github.com/apps/${process.env.GH_APP_SLUG || 'swiftconcur-ci'}/installations/new`;
   
   if (repositoryIds && repositoryIds.length > 0) {
     const params = new URLSearchParams({

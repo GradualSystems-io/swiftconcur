@@ -123,7 +123,7 @@ STRIPE_SECRET_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 
 # GitHub Marketplace
-GITHUB_WEBHOOK_SECRET=your-secret
+GH_WEBHOOK_SECRET=your-secret
 NEXT_PUBLIC_GITHUB_APP_NAME=swiftconcur-ci
 
 # Application

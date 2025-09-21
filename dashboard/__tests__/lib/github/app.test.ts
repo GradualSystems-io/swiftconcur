@@ -31,13 +31,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   process.env = {
     ...originalEnv,
-    GITHUB_APP_ID: '12345',
-    GITHUB_APP_PRIVATE_KEY: `-----BEGIN PRIVATE KEY-----
+    GH_APP_ID: '12345',
+    GH_APP_PRIVATE_KEY: `-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKB
 wxOUlY2R6OLFxKLxIZeXCgQ8/HMfFKGEllB8f8eMqYdG8Y7Qf9XbGnR8vKwh8eKK
 test-private-key-data-here
 -----END PRIVATE KEY-----`,
-    GITHUB_WEBHOOK_SECRET: 'test-webhook-secret',
+    GH_WEBHOOK_SECRET: 'test-webhook-secret',
   };
 });
 
@@ -270,15 +270,15 @@ describe('GitHub App Client', () => {
 
   describe('Error Handling', () => {
     it('handles missing environment variables', () => {
-      delete process.env.GITHUB_APP_ID;
-      delete process.env.GITHUB_APP_PRIVATE_KEY;
+      delete process.env.GH_APP_ID;
+      delete process.env.GH_APP_PRIVATE_KEY;
 
       expect(() => createInstallationClient(123456)).rejects.toThrow();
     });
 
     it('handles malformed private key', () => {
-      process.env.GITHUB_APP_PRIVATE_KEY = 'invalid-key-format';
-      
+      process.env.GH_APP_PRIVATE_KEY = 'invalid-key-format';
+
       expect(() => createInstallationClient(123456)).rejects.toThrow();
     });
 

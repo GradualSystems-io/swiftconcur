@@ -387,7 +387,7 @@ export default function DocumentationPage() {
         <CardContent className="space-y-4">
           <ol className="space-y-3 text-sm text-muted-foreground">
             <li>
-              <strong>Create a webhook secret:</strong> add <code className="bg-muted px-1 py-0.5 rounded">GH_WEBHOOK_SECRET</code> (or choose your own name) to your repository or organisation secrets and keep it in sync with the <code className="bg-muted px-1 py-0.5 rounded">GITHUB_WEBHOOK_SECRET</code> value you deploy on Vercel.
+              <strong>Create a webhook secret:</strong> add <code className="bg-muted px-1 py-0.5 rounded">GH_WEBHOOK_SECRET</code> (or choose your own name) to your repository or organisation secrets and keep it in sync with the <code className="bg-muted px-1 py-0.5 rounded">GH_WEBHOOK_SECRET</code> value you deploy on Vercel.
             </li>
             <li>
               <strong>Append a dashboard step:</strong> after the SwiftConcur action, add a step that posts the results to <code className="bg-muted px-1 py-0.5 rounded">https://gradualsystems.io/SwiftConcur/api/github/webhook</code>. This ensures data lands in <code className="bg-muted px-1 py-0.5 rounded">warning_runs</code>, <code className="bg-muted px-1 py-0.5 rounded">warnings</code> and <code className="bg-muted px-1 py-0.5 rounded">repository_warning_daily</code> for the Analytics page.

@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
         config: {
           url: webhookUrl,
           content_type: 'json',
-          secret: process.env.GITHUB_WEBHOOK_SECRET,
+          secret: process.env.GH_WEBHOOK_SECRET,
           insecure_ssl: '0',
         },
       }),

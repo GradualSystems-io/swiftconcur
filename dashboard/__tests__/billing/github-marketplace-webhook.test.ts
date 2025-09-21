@@ -28,7 +28,7 @@ function generateGitHubSignature(body: string, secret: string): string {
 
 describe('GitHub Marketplace Webhook Handler', () => {
   const secret = 'test-github-webhook-secret';
-  process.env.GITHUB_WEBHOOK_SECRET = secret;
+  process.env.GH_WEBHOOK_SECRET = secret;
   
   beforeEach(() => {
     jest.clearAllMocks();

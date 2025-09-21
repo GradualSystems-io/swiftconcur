@@ -110,7 +110,7 @@ function generateSignature(body: string, secret: string): string {
 
 describe('Marketplace Webhook Handler', () => {
   const secret = 'test-webhook-secret';
-  process.env.GITHUB_WEBHOOK_SECRET = secret;
+  process.env.GH_WEBHOOK_SECRET = secret;
   
   beforeEach(() => {
     // Reset database state
@@ -204,8 +204,8 @@ describe('Marketplace Webhook Handler', () => {
   - [ ] Submit for Marketplace review
 
 - [ ] **Environment Variables**
-  - [ ] `GITHUB_WEBHOOK_SECRET`
-  - [ ] `GITHUB_APP_NAME`
+  - [ ] `GH_WEBHOOK_SECRET`
+  - [ ] `GH_APP_NAME`
   - [ ] `NEXT_PUBLIC_GITHUB_APP_NAME`
 
 - [ ] **API Endpoints**
@@ -1545,7 +1545,7 @@ export async function POST(request: NextRequest) {
     const signature = request.headers.get('X-Hub-Signature-256');
     const deliveryId = request.headers.get('X-GitHub-Delivery');
     
-    if (!verifyWebhookSignature(body, signature, process.env.GITHUB_WEBHOOK_SECRET!)) {
+    if (!verifyWebhookSignature(body, signature, process.env.GH_WEBHOOK_SECRET!)) {
       console.error('Invalid webhook signature');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

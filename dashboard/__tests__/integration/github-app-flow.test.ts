@@ -153,7 +153,7 @@ beforeEach(() => {
   });
 
   // Setup environment
-  process.env.GITHUB_WEBHOOK_SECRET = 'test-webhook-secret';
+  process.env.GH_WEBHOOK_SECRET = 'test-webhook-secret';
   process.env.NEXT_PUBLIC_APP_URL = 'https://example.com';
 });
 

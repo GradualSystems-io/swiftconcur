@@ -31,7 +31,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   process.env = {
     ...originalEnv,
-    GITHUB_WEBHOOK_SECRET: 'test-webhook-secret',
+    GH_WEBHOOK_SECRET: 'test-webhook-secret',
   };
   
   // Default mocks

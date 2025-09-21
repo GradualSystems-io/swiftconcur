@@ -5,9 +5,9 @@ import { initializeUsageLimits } from '@/lib/billing/usage';
 
 // Get webhook secret with runtime validation
 function getGitHubWebhookSecret(): string {
-  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+  const secret = process.env.GH_WEBHOOK_SECRET;
   if (!secret) {
-    throw new Error('GITHUB_WEBHOOK_SECRET is required');
+    throw new Error('GH_WEBHOOK_SECRET is required');
   }
   return secret;
 }
