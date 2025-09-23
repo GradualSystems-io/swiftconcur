@@ -88,28 +88,35 @@ export default async function RepositoryDetailPage({
   let targetLogin: string | undefined;
   let secretConfigured = false;
   if (data.installation_id) {
-    const { data: installationRow, error: installationError } = await supabase
-      .from('github_installations')
-      .select('target_login, webhook_secret')
-      .eq('installation_id', data.installation_id)
-      .single<{ target_login: string; webhook_secret: string | null }>();
+    try {
+      const { data: installationRow, error: installationError } = await supabase
+        .from('github_installations')
+        .select('target_login, webhook_secret')
+        .eq('installation_id', data.installation_id)
+        .maybeSingle<{ target_login: string; webhook_secret: string | null }>();
 
-    if (!installationError) {
-      targetLogin = installationRow?.target_login;
-      secretConfigured = Boolean(installationRow?.webhook_secret);
-    } else if (installationError.code !== 'PGRST116') {
-      throw new Error(`Failed to load installation details: ${installationError.message}`);
+      if (!installationError && installationRow) {
+        targetLogin = installationRow.target_login;
+        secretConfigured = Boolean(installationRow.webhook_secret);
+      }
+    } catch (installationFetchError) {
+      console.warn('Failed to load installation metadata', {
+        installationId: data.installation_id,
+        error: installationFetchError,
+      });
     }
   }
 
+  const displayName = data.full_name ?? data.name ?? 'Repository';
   const lastUpdated = data.updated_at ? new Date(data.updated_at).toLocaleString() : 'Unknown';
-  const repoUrl = data.full_name ? `https://github.com/${data.full_name}` : undefined;
+  const repoUrlBase = data.full_name ?? data.name ?? undefined;
+  const repoUrl = repoUrlBase ? `https://github.com/${repoUrlBase}` : undefined;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">{data.full_name}</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{displayName}</h1>
           <p className="text-muted-foreground">
             Managed by {targetLogin ?? 'GitHub App'}
           </p>
