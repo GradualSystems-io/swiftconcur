@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, verifyUser } from '@/lib/supabase/server';
+import { verifyUser, createServiceRoleClient } from '@/lib/supabase/server';
 
 interface RequestBody {
   secret?: string;
@@ -50,7 +50,7 @@ export async function POST(
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const supabase = createClient();
+  const supabase = createServiceRoleClient();
 
   const { data: installation, error: fetchError } = await supabase
     .from('github_installations')
@@ -90,7 +90,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Invalid installation id' }, { status: 400 });
   }
 
-  const supabase = createClient();
+  const supabase = createServiceRoleClient();
 
   const { data: installation, error: fetchError } = await supabase
     .from('github_installations')
