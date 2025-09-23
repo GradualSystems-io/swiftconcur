@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CheckCircle2, Info, Loader2, XCircle } from 'lucide-react';
 
 interface WebhookSecretManagerProps {
-  installationId: number;
+  installationId: number | null;
   secretConfigured: boolean;
 }
 
@@ -28,6 +28,11 @@ export function WebhookSecretManager({ installationId, secretConfigured }: Webho
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!installationId) {
+      setStatus({ state: 'error', message: 'Installation is not linked; connect the GitHub App before saving the secret.' });
+      return;
+    }
 
     if (!secretValue.trim()) {
       setStatus({ state: 'error', message: 'Enter the secret value from your GitHub repository settings.' });
@@ -61,6 +66,11 @@ export function WebhookSecretManager({ installationId, secretConfigured }: Webho
 
   async function handleClear() {
     setStatus({ state: 'saving' });
+
+    if (!installationId) {
+      setStatus({ state: 'error', message: 'Installation is not linked; connect the GitHub App before clearing the secret.' });
+      return;
+    }
 
     try {
       const response = await fetch(`/api/installations/${installationId}/webhook-secret`, {

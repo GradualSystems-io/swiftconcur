@@ -262,7 +262,7 @@ export async function syncUserRepositories(
   const { error } = await supabase
     .from('repositories')
     .upsert(repoData, {
-      onConflict: 'installation_id,github_repo_id',
+      onConflict: 'user_id,github_id',
     })
     .select();
 
