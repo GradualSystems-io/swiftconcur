@@ -8,8 +8,8 @@ import { createClient, verifyUser } from '@/lib/supabase/server';
 
 interface RepositoryResponse {
   id: string;
-  name: string;
-  full_name: string;
+  name: string | null;
+  full_name: string | null;
   is_private: boolean;
   default_branch: string | null;
   language: string | null;
@@ -30,25 +30,60 @@ export default async function RepositoryDetailPage({
     notFound();
   }
 
-  const fullName = decodeURIComponent(params.slug.join('/'));
-
-  const supabase = createClient();
-  const { data, error: repoError } = await supabase
-    .from('repositories')
-    .select(
-      `id, name, full_name, is_private, default_branch, language, stars_count, updated_at, github_repo_id, installation_id`
-    )
-    .eq('user_id', user!.id)
-    .eq('full_name', fullName)
-    .single<RepositoryResponse>();
-
-  if (repoError && repoError.code !== 'PGRST116') {
-    throw new Error(`Failed to load repository: ${repoError.message}`);
-  }
-
-  if (!data) {
+  const slug = params.slug ?? [];
+  if (slug.length === 0) {
     notFound();
   }
+
+  const fullName = decodeURIComponent(slug.join('/'));
+  const supabase = createClient();
+  const selectColumns = `id, name, full_name, is_private, default_branch, language, stars_count, updated_at, github_repo_id, installation_id`;
+
+  let repository: RepositoryResponse | null = null;
+  let fetchError: { message: string; code: string } | null = null;
+
+  const fullNameResult = await supabase
+    .from('repositories')
+    .select(selectColumns)
+    .eq('user_id', user!.id)
+    .eq('full_name', fullName)
+    .maybeSingle<RepositoryResponse>();
+
+  if (fullNameResult.error && fullNameResult.error.code !== 'PGRST116') {
+    fetchError = fullNameResult.error;
+  } else {
+    repository = fullNameResult.data ?? null;
+  }
+
+  if (!repository && !fetchError) {
+    const fallbackResult = await supabase
+      .from('repositories')
+      .select(selectColumns)
+      .eq('user_id', user!.id)
+      .eq('name', fullName)
+      .maybeSingle<RepositoryResponse>();
+
+    if (fallbackResult.error && fallbackResult.error.code !== 'PGRST116') {
+      fetchError = fallbackResult.error;
+    } else {
+      repository = fallbackResult.data ?? null;
+    }
+  }
+
+  if (fetchError) {
+    console.error('Failed to load repository', {
+      fullName,
+      userId: user!.id,
+      error: fetchError,
+    });
+    notFound();
+  }
+
+  if (!repository) {
+    notFound();
+  }
+
+  const data = repository;
 
   let targetLogin: string | undefined;
   let secretConfigured = false;
