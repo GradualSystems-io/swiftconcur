@@ -66,12 +66,15 @@ export function RepoCard({ repo, className }: RepoCardProps) {
     return 'text-gray-600 dark:text-gray-400';
   };
 
-  const fullName = repo.full_name || repo.name;
-  const repoHref = fullName
-    ? `/repositories/${fullName
+  const fullName = repo.full_name ?? repo.name ?? '';
+  const pathSegments = fullName
+    ? fullName
         .split('/')
-        .map(segment => encodeURIComponent(segment))
-        .join('/')}`
+        .filter(Boolean)
+        .map((segment) => encodeURIComponent(segment))
+    : [];
+  const repoHref = pathSegments.length
+    ? `/repositories/${pathSegments.join('/')}`
     : '/repositories';
   
   return (

@@ -164,15 +164,20 @@ export function Sidebar({ repos, className, onClose }: SidebarProps) {
                   </Button>
                 </div>
               ) : (
-                repos.map((repo) => {
-                  const fullName = repo.full_name || repo.name;
-                  const repoHref = fullName
-                    ? `/repositories/${fullName
-                        .split('/')
-                        .map(segment => encodeURIComponent(segment))
-                        .join('/')}`
-                    : '/repositories';
-                  const status = getRepoStatus(repo.id);
+                repos
+                  .filter((repo): repo is typeof repo & { id: string } => Boolean(repo))
+                  .map((repo) => {
+                    const fullName = repo.full_name ?? repo.name ?? '';
+                    const pathSegments = fullName
+                      ? fullName
+                          .split('/')
+                          .filter(Boolean)
+                          .map((segment) => encodeURIComponent(segment))
+                      : [];
+                    const repoHref = pathSegments.length
+                      ? `/repositories/${pathSegments.join('/')}`
+                      : '/repositories';
+                    const status = getRepoStatus(repo.id);
                   
                   return (
                     <Button
@@ -190,7 +195,7 @@ export function Sidebar({ repos, className, onClose }: SidebarProps) {
                           <StatusIcon status={status} />
                           <GitBranch className="h-4 w-4 flex-shrink-0" />
                           <span className="truncate text-sm">
-                            {repo.name}
+                            {repo.name ?? fullName ?? 'Repository'}
                           </span>
                         </div>
                       </Link>
