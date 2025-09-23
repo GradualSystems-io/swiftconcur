@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { WebhookSecretManager } from '@/components/repositories/WebhookSecretManager';
 import { createClient, verifyUser } from '@/lib/supabase/server';
 
 interface RepositoryResponse {
@@ -50,15 +51,17 @@ export default async function RepositoryDetailPage({
   }
 
   let targetLogin: string | undefined;
+  let secretConfigured = false;
   if (data.installation_id) {
     const { data: installationRow, error: installationError } = await supabase
       .from('github_installations')
-      .select('target_login')
+      .select('target_login, webhook_secret')
       .eq('installation_id', data.installation_id)
-      .single<{ target_login: string }>();
+      .single<{ target_login: string; webhook_secret: string | null }>();
 
     if (!installationError) {
       targetLogin = installationRow?.target_login;
+      secretConfigured = Boolean(installationRow?.webhook_secret);
     } else if (installationError.code !== 'PGRST116') {
       throw new Error(`Failed to load installation details: ${installationError.message}`);
     }
@@ -126,6 +129,23 @@ export default async function RepositoryDetailPage({
           </div>
         </CardContent>
       </Card>
+
+      {data.installation_id && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Webhook Secret</CardTitle>
+            <CardDescription>
+              Store the shared secret used to sign SwiftConcur warning payloads from this installation.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <WebhookSecretManager
+              installationId={data.installation_id}
+              secretConfigured={secretConfigured}
+            />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

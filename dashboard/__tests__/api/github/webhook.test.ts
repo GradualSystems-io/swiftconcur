@@ -6,24 +6,27 @@ import { POST } from '@/app/api/github/webhook/route';
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
 
-// Mock webhook processors
 jest.mock('@/lib/github/webhooks', () => ({
-  processInstallationWebhook: jest.fn(),
-  processRepositoryWebhook: jest.fn(), 
-  processSwiftConcurWebhook: jest.fn(),
-  validateWebhookEvent: jest.fn(),
+  processWebhookEvent: jest.fn(),
 }));
 
-// Mock GitHub App client
 jest.mock('@/lib/github/app', () => ({
   verifyWebhookSignature: jest.fn(),
+  GH_APP_CONFIG: { webhookSecret: 'test-webhook-secret' },
 }));
 
-const mockProcessInstallationWebhook = require('@/lib/github/webhooks').processInstallationWebhook;
-const mockProcessRepositoryWebhook = require('@/lib/github/webhooks').processRepositoryWebhook;
-const mockProcessSwiftConcurWebhook = require('@/lib/github/webhooks').processSwiftConcurWebhook;
-const mockValidateWebhookEvent = require('@/lib/github/webhooks').validateWebhookEvent;
-const mockVerifyWebhookSignature = require('@/lib/github/app').verifyWebhookSignature;
+jest.mock('@/lib/github/secrets', () => ({
+  getInstallationWebhookSecret: jest.fn().mockResolvedValue(null),
+  getWebhookSecretForRepository: jest
+    .fn()
+    .mockResolvedValue({ secret: null, installationId: null }),
+}));
+
+const mockProcessWebhookEvent = require('@/lib/github/webhooks').processWebhookEvent;
+const githubAppModule = require('@/lib/github/app');
+const mockVerifyWebhookSignature = githubAppModule.verifyWebhookSignature;
+const mockGetInstallationWebhookSecret = require('@/lib/github/secrets').getInstallationWebhookSecret;
+const mockGetWebhookSecretForRepository = require('@/lib/github/secrets').getWebhookSecretForRepository;
 
 // Mock environment variables
 const originalEnv = process.env;
@@ -35,8 +38,11 @@ beforeEach(() => {
   };
   
   // Default mocks
-  mockValidateWebhookEvent.mockImplementation(() => {});
-  mockVerifyWebhookSignature.mockReturnValue(true);
+  mockProcessWebhookEvent.mockResolvedValue(undefined);
+  mockVerifyWebhookSignature.mockResolvedValue(true);
+  mockGetInstallationWebhookSecret.mockResolvedValue(null);
+  mockGetWebhookSecretForRepository.mockResolvedValue({ secret: null, installationId: null });
+  githubAppModule.GH_APP_CONFIG.webhookSecret = 'test-webhook-secret';
 });
 
 afterEach(() => {
@@ -87,7 +93,7 @@ describe('/api/github/webhook', () => {
 
       expect(response.status).toBe(200);
       expect(responseData).toEqual({ success: true });
-      expect(mockProcessInstallationWebhook).toHaveBeenCalledWith(payload);
+      expect(mockProcessWebhookEvent).toHaveBeenCalledWith('installation', payload, 'test-delivery-id');
     });
 
     it('processes repository webhook successfully', async () => {
@@ -105,7 +111,7 @@ describe('/api/github/webhook', () => {
 
       expect(response.status).toBe(200);
       expect(responseData).toEqual({ success: true });
-      expect(mockProcessRepositoryWebhook).toHaveBeenCalledWith(payload);
+      expect(mockProcessWebhookEvent).toHaveBeenCalledWith('installation_repositories', payload, 'test-delivery-id');
     });
 
     it('processes SwiftConcur warning webhook successfully', async () => {
@@ -128,11 +134,11 @@ describe('/api/github/webhook', () => {
 
       expect(response.status).toBe(200);
       expect(responseData).toEqual({ success: true });
-      expect(mockProcessSwiftConcurWebhook).toHaveBeenCalledWith(payload);
+      expect(mockProcessWebhookEvent).toHaveBeenCalledWith('swiftconcur_warning', payload, 'test-delivery-id');
     });
 
     it('rejects webhook with invalid signature', async () => {
-      mockVerifyWebhookSignature.mockReturnValue(false);
+      mockVerifyWebhookSignature.mockResolvedValue(false);
 
       const payload = { action: 'created' };
       const request = createMockRequest('installation', payload, 'invalid-signature');
@@ -141,7 +147,7 @@ describe('/api/github/webhook', () => {
       const responseData = await response.json();
 
       expect(response.status).toBe(401);
-      expect(responseData).toEqual({ error: 'Invalid webhook signature' });
+      expect(responseData).toEqual({ error: 'Invalid signature' });
     });
 
     it('rejects webhook with missing signature', async () => {
@@ -164,19 +170,37 @@ describe('/api/github/webhook', () => {
       expect(responseData).toEqual({ error: 'Missing webhook signature' });
     });
 
-    it('rejects unsupported event types', async () => {
-      const payload = { action: 'created' };
-      const request = createMockRequest('unsupported_event', payload);
+    it('allows unsigned payload when no secrets configured', async () => {
+      githubAppModule.GH_APP_CONFIG.webhookSecret = '';
+      mockGetInstallationWebhookSecret.mockResolvedValue(null);
+      mockGetWebhookSecretForRepository.mockResolvedValue({ secret: null, installationId: null });
 
-      mockValidateWebhookEvent.mockImplementation(() => {
-        throw new Error('Unsupported event type: unsupported_event');
-      });
+      const payload = {
+        action: 'warning_report',
+        repository: {
+          id: 123,
+          full_name: 'user/demo',
+        },
+        swiftconcur: { warning_count: 0, new_warnings: 0, fixed_warnings: 0 },
+      };
+
+      const request = {
+        headers: {
+          get: jest.fn((header: string) => {
+            const headers: Record<string, string> = {
+              'x-github-event': 'swiftconcur_warning',
+              'x-github-delivery': 'test-delivery-id',
+            };
+            return headers[header.toLowerCase()] || null;
+          }),
+        },
+        text: jest.fn().mockResolvedValue(JSON.stringify(payload)),
+      } as unknown as NextRequest;
 
       const response = await POST(request);
-      const responseData = await response.json();
-
-      expect(response.status).toBe(400);
-      expect(responseData).toEqual({ error: 'Unsupported event type: unsupported_event' });
+      expect(response.status).toBe(200);
+      expect(mockVerifyWebhookSignature).not.toHaveBeenCalled();
+      expect(mockProcessWebhookEvent).toHaveBeenCalledWith('swiftconcur_warning', payload, 'test-delivery-id');
     });
 
     it('handles malformed JSON payload', async () => {
@@ -193,10 +217,6 @@ describe('/api/github/webhook', () => {
         },
         text: jest.fn().mockResolvedValue('invalid json'),
       } as unknown as NextRequest;
-
-      mockValidateWebhookEvent.mockImplementation(() => {
-        throw new Error('Invalid JSON payload');
-      });
 
       const response = await POST(request);
       const responseData = await response.json();

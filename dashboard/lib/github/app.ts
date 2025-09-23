@@ -12,7 +12,10 @@ import { verify } from '@octokit/webhooks-methods';
 const requiredEnvVars = {
   GH_APP_ID: process.env.GH_APP_ID,
   GH_APP_PRIVATE_KEY: process.env.GH_APP_PRIVATE_KEY,
-  GH_WEBHOOK_SECRET: process.env.GH_WEBHOOK_SECRET,
+} as const;
+
+const optionalEnvVars = {
+  GH_WEBHOOK_SECRET: process.env.GH_WEBHOOK_SECRET ?? '',
 } as const;
 
 for (const [key, value] of Object.entries(requiredEnvVars)) {
@@ -25,7 +28,7 @@ for (const [key, value] of Object.entries(requiredEnvVars)) {
 export const GH_APP_CONFIG = {
   appId: parseInt(requiredEnvVars.GH_APP_ID!, 10),
   privateKey: requiredEnvVars.GH_APP_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-  webhookSecret: requiredEnvVars.GH_WEBHOOK_SECRET!,
+  webhookSecret: optionalEnvVars.GH_WEBHOOK_SECRET,
   permissions: {
     contents: 'read',
     issues: 'write',
@@ -76,10 +79,18 @@ export function createAppClient(): Octokit {
  */
 export async function verifyWebhookSignature(
   payload: string | Buffer,
-  signature: string
+  signature: string,
+  secret?: string
 ): Promise<boolean> {
+  const effectiveSecret = secret ?? GH_APP_CONFIG.webhookSecret;
+
+  if (!effectiveSecret) {
+    console.error('No webhook secret configured for signature verification');
+    return false;
+  }
+
   try {
-    return await verify(GH_APP_CONFIG.webhookSecret, payload, signature);
+    return await verify(effectiveSecret, payload, signature);
   } catch (error) {
     console.error('Webhook signature verification failed:', error);
     return false;

@@ -15,6 +15,29 @@ export type Database = {
         Insert: Omit<Database['public']['Tables']['repos']['Row'], 'id' | 'created_at'>;
         Update: Partial<Database['public']['Tables']['repos']['Insert']>;
       };
+      github_installations: {
+        Row: {
+          id: string;
+          user_id: string;
+          installation_id: number;
+          target_type: 'User' | 'Organization';
+          target_id: number;
+          target_login: string;
+          permissions: Record<string, unknown> | null;
+          app_id: number;
+          suspended_at: string | null;
+          created_at: string;
+          updated_at: string;
+          webhook_secret: string | null;
+        };
+        Insert: Omit<Database['public']['Tables']['github_installations']['Row'], 'id' | 'created_at' | 'updated_at' | 'permissions' | 'app_id' | 'suspended_at' | 'webhook_secret'> & {
+          permissions?: Record<string, unknown> | null;
+          app_id?: number;
+          suspended_at?: string | null;
+          webhook_secret?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['github_installations']['Insert']>;
+      };
       runs: {
         Row: {
           id: string;

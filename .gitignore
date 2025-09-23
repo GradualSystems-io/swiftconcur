@@ -46,3 +46,4 @@ instructions/.DS_Store
 build.xcresult.zip
 /tmp_xc
 /build
+supabase/config.toml
