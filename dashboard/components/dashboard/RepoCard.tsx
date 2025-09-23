@@ -66,10 +66,13 @@ export function RepoCard({ repo, className }: RepoCardProps) {
     return 'text-gray-600 dark:text-gray-400';
   };
 
-  const repoHref = `/repositories/${repo.full_name
-    .split('/')
-    .map(segment => encodeURIComponent(segment))
-    .join('/')}`;
+  const fullName = repo.full_name || repo.name;
+  const repoHref = fullName
+    ? `/repositories/${fullName
+        .split('/')
+        .map(segment => encodeURIComponent(segment))
+        .join('/')}`
+    : '/repositories';
   
   return (
     <Card className={cn("transition-all duration-200 hover:shadow-md", className)}>
