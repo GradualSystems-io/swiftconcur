@@ -65,6 +65,11 @@ export function RepoCard({ repo, className }: RepoCardProps) {
     if (trend < -5) return 'text-green-600 dark:text-green-400';
     return 'text-gray-600 dark:text-gray-400';
   };
+
+  const repoHref = `/repositories/${repo.full_name
+    .split('/')
+    .map(segment => encodeURIComponent(segment))
+    .join('/')}`;
   
   return (
     <Card className={cn("transition-all duration-200 hover:shadow-md", className)}>
@@ -73,7 +78,7 @@ export function RepoCard({ repo, className }: RepoCardProps) {
           <div className="space-y-1 flex-1 min-w-0">
             <CardTitle className="text-lg font-semibold truncate">
               <Link 
-                href={`/r/${repo.id}`}
+                href={repoHref}
                 className="hover:text-primary transition-colors"
               >
                 {repo.name}
@@ -172,14 +177,14 @@ export function RepoCard({ repo, className }: RepoCardProps) {
         {/* Action Buttons */}
         <div className="flex gap-2 pt-2">
           <Button asChild className="flex-1">
-            <Link href={`/r/${repo.id}`}>
+            <Link href={repoHref}>
               <GitBranch className="h-4 w-4 mr-2" />
               View Details
             </Link>
           </Button>
           
           <Button variant="outline" size="icon" asChild>
-            <Link href={`/r/${repo.id}/settings`}>
+            <Link href={`${repoHref}/settings`}>
               <Settings className="h-4 w-4" />
               <span className="sr-only">Repository settings</span>
             </Link>

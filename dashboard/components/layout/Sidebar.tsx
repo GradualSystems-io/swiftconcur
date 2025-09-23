@@ -165,7 +165,10 @@ export function Sidebar({ repos, className, onClose }: SidebarProps) {
                 </div>
               ) : (
                 repos.map((repo) => {
-                  const repoHref = `/r/${repo.id}`;
+                  const repoHref = `/repositories/${repo.full_name
+                    .split('/')
+                    .map(segment => encodeURIComponent(segment))
+                    .join('/')}`;
                   const status = getRepoStatus(repo.id);
                   
                   return (
