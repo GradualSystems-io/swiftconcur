@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,6 +26,12 @@ export function WebhookSecretManager({ installationId, secretConfigured }: Webho
 
   const isSaving = status.state === 'saving';
 
+  const apiBase = useMemo(() => {
+    const base = process.env.NEXT_PUBLIC_APP_URL ?? '';
+    if (!base) return '';
+    return base.endsWith('/') ? base.slice(0, -1) : base;
+  }, []);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -42,7 +48,7 @@ export function WebhookSecretManager({ installationId, secretConfigured }: Webho
     setStatus({ state: 'saving' });
 
     try {
-      const response = await fetch(`/api/installations/${installationId}/webhook-secret`, {
+      const response = await fetch(`${apiBase}/api/installations/${installationId}/webhook-secret`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ secret: secretValue }),
@@ -73,7 +79,7 @@ export function WebhookSecretManager({ installationId, secretConfigured }: Webho
     }
 
     try {
-      const response = await fetch(`/api/installations/${installationId}/webhook-secret`, {
+      const response = await fetch(`${apiBase}/api/installations/${installationId}/webhook-secret`, {
         method: 'DELETE',
       });
 
