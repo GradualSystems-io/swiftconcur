@@ -146,6 +146,26 @@ export type Database = {
         Insert: Omit<Database['public']['Tables']['repos']['Row'], 'id' | 'created_at'>;
         Update: Partial<Database['public']['Tables']['repos']['Insert']>;
       };
+      swiftconcur_baselines: {
+        Row: {
+          id: string;
+          user_id: string;
+          installation_id: number;
+          repo_full_name: string;
+          baseline_json: Record<string, unknown>;
+          baseline_hash: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          installation_id: number;
+          repo_full_name: string;
+          baseline_json: Record<string, unknown>;
+          baseline_hash?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['swiftconcur_baselines']['Insert']>;
+      };
     };
     Views: {
       repo_stats: {

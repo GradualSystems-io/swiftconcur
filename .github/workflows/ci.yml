@@ -1,13 +1,284 @@
-name: Test & Lint
+name: SwiftConcur CI
+
 on: [push, pull_request]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  statuses: write
+
+env:
+  SCHEME: ConcurDemo
+  BASELINE_API_URL: https://gradualsystems.io/SwiftConcur/api/baselines
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with: { toolchain: stable, profile: minimal, override: true }
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest --locked
-      - run: cargo nextest run
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Download baseline from main (if exists)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin main
+          git checkout origin/main -- .swiftconcur/baseline.json || echo "No baseline found"
+
+      - name: Check GitHub App secrets
+        id: check-app-secrets
+        env:
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+        run: |
+          if [ -n "$GH_APP_ID" ] && [ -n "$GH_APP_PRIVATE_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ GitHub App secrets not configured; skipping token generation."
+          fi
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ steps.check-app-secrets.outputs.present == 'true' }}
+        uses: actions/github-app-token@v2
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Capture installation id
+        if: ${{ steps.check-app-secrets.outputs.present == 'true' }}
+        run: echo "INSTALLATION_ID=${{ steps.app-token.outputs.installation-id }}" >> $GITHUB_ENV
+
+      - name: Fetch baseline from dashboard
+        if: ${{ steps.check-app-secrets.outputs.present == 'true' && secrets.GH_WEBHOOK_SECRET != '' }}
+        env:
+          GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
+        run: |
+          INSTALLATION_ID="${{ steps.app-token.outputs.installation-id }}"
+          if [ -z "$INSTALLATION_ID" ]; then
+            INSTALLATION_ID="${{ github.event.installation.id }}"
+          fi
+
+          if [ -z "$INSTALLATION_ID" ]; then
+            echo "No installation id available; skipping baseline download."
+            exit 0
+          fi
+
+          mkdir -p .swiftconcur
+          jq -n \
+            --arg installation_id "$INSTALLATION_ID" \
+            --arg repo "${{ github.repository }}" \
+            '{ installation_id: ($installation_id | tonumber), repo_full_name: $repo }' > /tmp/baseline_request.json
+
+          SIGNATURE=$(openssl dgst -sha256 -hmac "$GH_WEBHOOK_SECRET" /tmp/baseline_request.json | awk '{print $NF}')
+
+          HTTP_CODE=$(curl -sS -o /tmp/baseline_response.json -w '%{http_code}' \
+            -X POST "$BASELINE_API_URL" \
+            -H 'Content-Type: application/json' \
+            -H "X-Hub-Signature-256: sha256=$SIGNATURE" \
+            --data @/tmp/baseline_request.json || true)
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            jq '.baseline_json' /tmp/baseline_response.json > .swiftconcur/baseline.json
+            echo "Downloaded baseline from dashboard."
+          elif [ "$HTTP_CODE" = "204" ]; then
+            echo "No stored baseline found; proceeding without one."
+          else
+            echo "⚠️ Baseline fetch failed with status $HTTP_CODE" >&2
+            cat /tmp/baseline_response.json || true
+          fi
+
+      - name: SwiftConcur
+        id: swiftconcur
+        uses: GradualSystems-io/swiftconcur@1698fca1f6e4fbfbf94e27f8b7848c85d764434d
+        with:
+          project-path: 'ConcurDemo.xcodeproj'
+          scheme: ${{ env.SCHEME }}
+          configuration: 'Debug'
+          warn-threshold: '2'
+          threshold: '5'
+          baseline-path: '.swiftconcur/baseline.json'
+          dashboard-url: 'https://gradualsystems.io/SwiftConcur'
+          xcodebuild-args: "-sdk iphonesimulator -destination 'platform=iOS Simulator,OS=18.6,name=iPhone 16' CODE_SIGNING_ALLOWED=NO SWIFT_VERSION=5.10 SWIFT_STRICT_CONCURRENCY=targeted OTHER_SWIFT_FLAGS='-Xfrontend -warn-concurrency' -resultBundlePath build.xcresult"
+          fail-on-warnings: false
+
+      - name: Upload baseline to dashboard
+        if: ${{ steps.check-app-secrets.outputs.present == 'true' && secrets.GH_WEBHOOK_SECRET != '' }}
+        env:
+          GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
+        run: |
+          INSTALLATION_ID="${{ steps.app-token.outputs.installation-id }}"
+          if [ -z "$INSTALLATION_ID" ]; then
+            INSTALLATION_ID="${{ github.event.installation.id }}"
+          fi
+
+          if [ -z "$INSTALLATION_ID" ]; then
+            echo "No installation id available; skipping baseline upload."
+            exit 0
+          fi
+
+          REPORT_PATH="${{ steps.swiftconcur.outputs.json-report }}"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "SwiftConcur did not produce a JSON report; skipping baseline upload."
+            exit 0
+          fi
+
+          BASELINE_HASH=$(shasum -a 256 "$REPORT_PATH" | awk '{print $1}')
+
+          jq -n \
+            --arg installation_id "$INSTALLATION_ID" \
+            --arg repo "${{ github.repository }}" \
+            --arg hash "$BASELINE_HASH" \
+            --slurpfile baseline "$REPORT_PATH" \
+            '{
+              installation_id: ($installation_id | tonumber),
+              repo_full_name: $repo,
+              baseline_hash: $hash,
+              baseline_json: $baseline[0]
+            }' > /tmp/baseline_upload.json
+
+          SIGNATURE=$(openssl dgst -sha256 -hmac "$GH_WEBHOOK_SECRET" /tmp/baseline_upload.json | awk '{print $NF}')
+
+          HTTP_CODE=$(curl -sS -o /tmp/baseline_upload_response.json -w '%{http_code}' \
+            -X PUT "$BASELINE_API_URL" \
+            -H 'Content-Type: application/json' \
+            -H "X-Hub-Signature-256: sha256=$SIGNATURE" \
+            --data @/tmp/baseline_upload.json || true)
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "Uploaded baseline to dashboard."
+          else
+            echo "⚠️ Baseline upload failed with status $HTTP_CODE" >&2
+            cat /tmp/baseline_upload_response.json || true
+          fi
+
+      - name: Send data to Dashboard
+        if: always()
+        env:
+          GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
+        run: |
+          INSTALLATION_ID="${{ steps.app-token.outputs.installation-id }}"
+          if [ -z "$INSTALLATION_ID" ]; then
+            INSTALLATION_ID="${{ github.event.installation.id }}"
+          fi
+          INSTALLATION_JSON=null
+          if [ -n "$INSTALLATION_ID" ]; then
+            INSTALLATION_JSON=$INSTALLATION_ID
+          else
+            echo "ℹ️ No installation id on this event; proceeding without it."
+          fi
+
+          WARNING_COUNT="${{ steps.swiftconcur.outputs.warning-count }}"
+          NEW_WARNINGS="${{ steps.swiftconcur.outputs.new-warnings }}"
+          FIXED_WARNINGS="${{ steps.swiftconcur.outputs.fixed-warnings }}"
+          BUILD_TIME="${{ steps.swiftconcur.outputs.build-time-seconds }}"
+          SUMMARY_MD_PATH="${{ steps.swiftconcur.outputs.summary-markdown }}"
+          JSON_REPORT="${{ steps.swiftconcur.outputs.json-report }}"
+
+          WARNING_COUNT="${WARNING_COUNT:-0}"
+          NEW_WARNINGS="${NEW_WARNINGS:-0}"
+          FIXED_WARNINGS="${FIXED_WARNINGS:-0}"
+          BUILD_TIME="${BUILD_TIME:-0}"
+
+          WARNINGS_JSON="[]"
+          if [ -f "$JSON_REPORT" ]; then
+            WARNINGS_JSON=$(jq -c '.warnings // []' "$JSON_REPORT" 2>/dev/null || echo '[]')
+          fi
+
+          SUMMARY_TEXT="SwiftConcur detected ${WARNING_COUNT} warnings (new: ${NEW_WARNINGS}, fixed: ${FIXED_WARNINGS})."
+          if [ -f "$SUMMARY_MD_PATH" ]; then
+            SUMMARY_TEXT="$(head -n 200 "$SUMMARY_MD_PATH")"
+          fi
+
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          if [ -z "$PR_NUMBER" ]; then
+            PR_FIELD=null
+          else
+            PR_FIELD=$PR_NUMBER
+          fi
+
+          jq -n \
+            --argjson installation_id "$INSTALLATION_JSON" \
+            --arg repo_id "${{ github.event.repository.id }}" \
+            --arg repo_name "${{ github.event.repository.name }}" \
+            --arg repo_full "${{ github.repository }}" \
+            --argjson repo_private "${{ github.event.repository.private }}" \
+            --arg repo_default_branch "${{ github.event.repository.default_branch }}" \
+            --arg head_sha "${{ github.sha }}" \
+            --arg head_branch "${{ github.ref_name }}" \
+            --arg workflow_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --argjson warning_count "$WARNING_COUNT" \
+            --argjson new_warnings "$NEW_WARNINGS" \
+            --argjson fixed_warnings "$FIXED_WARNINGS" \
+            --argjson build_time "$BUILD_TIME" \
+            --arg summary_text "$SUMMARY_TEXT" \
+            --arg json_report_path "$JSON_REPORT" \
+            --argjson warnings "$WARNINGS_JSON" \
+            --argjson pull_request "$PR_FIELD" \
+            '{
+              action: "warning_report",
+              installation: (if $installation_id == null then null else { id: $installation_id } end),
+              repository: {
+                id: ($repo_id | tonumber),
+                name: $repo_name,
+                full_name: $repo_full,
+                private: $repo_private,
+                default_branch: $repo_default_branch
+              },
+              workflow_run: {
+                head_sha: $head_sha,
+                head_branch: $head_branch,
+                conclusion: "success",
+                html_url: $workflow_url
+              },
+              swiftconcur: {
+                warning_count: $warning_count,
+                new_warnings: $new_warnings,
+                fixed_warnings: $fixed_warnings,
+                build_time_seconds: $build_time,
+                summary: $summary_text,
+                json_report_path: $json_report_path,
+                pull_request_number: $pull_request,
+                warnings: $warnings
+              }
+            }' > /tmp/webhook_payload.json
+
+          if [ -z "$GH_WEBHOOK_SECRET" ]; then
+            echo "⚠️ GH_WEBHOOK_SECRET not set; skipping signature header."
+            curl -sS -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \
+              -H "Content-Type: application/json" \
+              -H "X-GitHub-Event: swiftconcur_warning" \
+              -H "X-GitHub-Delivery: swiftconcur-${{ github.run_id }}" \
+              -H "User-Agent: GitHub-Actions" \
+              --data '@/tmp/webhook_payload.json' \
+              --fail || echo "⚠️ Dashboard webhook failed - analytics data will be missing for this run."
+          else
+            SIG_VALUE=$(openssl dgst -sha256 -hmac "$GH_WEBHOOK_SECRET" /tmp/webhook_payload.json | awk '{print $NF}')
+            echo "Computed signature: sha256=$SIG_VALUE"
+
+            cat /tmp/webhook_payload.json 
+            curl -sS -X POST "https://gradualsystems.io/SwiftConcur/api/github/webhook" \
+              -H "Content-Type: application/json" \
+              -H "X-GitHub-Event: swiftconcur_warning" \
+              -H "X-GitHub-Delivery: swiftconcur-${{ github.run_id }}" \
+              -H "X-Hub-Signature-256: sha256=$SIG_VALUE" \
+              -H "User-Agent: GitHub-Actions" \
+              --data '@/tmp/webhook_payload.json' \
+              --fail || echo "⚠️ Dashboard webhook failed - analytics data will be missing for this run."
+          fi
+
+      - name: Add report to job summary
+        if: always()
+        run: |
+          echo "### SwiftConcur Warnings" >> "$GITHUB_STEP_SUMMARY"
+          SM_PATH="${{ steps.swiftconcur.outputs.summary-markdown }}"
+          if [ -f "$SM_PATH" ]; then
+            cat "$SM_PATH" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "(no summary available)" >> "$GITHUB_STEP_SUMMARY"
+          fi
