@@ -23,11 +23,11 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Download baseline from main (if exists)
+      - name: Download baseline from main (PR fallback)
         if: github.event_name == 'pull_request'
         run: |
           git fetch origin main
-          git checkout origin/main -- .swiftconcur/baseline.json || echo "No baseline found"
+          git checkout origin/main -- .swiftconcur/baseline.json || echo "No baseline file on main"
 
       - name: Check GitHub App secrets
         id: check-app-secrets
@@ -55,11 +55,11 @@ jobs:
         run: echo "INSTALLATION_ID=${{ steps.app-token.outputs.installation-id }}" >> $GITHUB_ENV
 
       - name: Fetch baseline from dashboard
-        if: ${{ steps.check-app-secrets.outputs.present == 'true' && secrets.GH_WEBHOOK_SECRET != '' }}
+        if: ${{ secrets.GH_WEBHOOK_SECRET != '' }}
         env:
           GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
         run: |
-          INSTALLATION_ID="${{ steps.app-token.outputs.installation-id }}"
+          INSTALLATION_ID="${INSTALLATION_ID:-}"
           if [ -z "$INSTALLATION_ID" ]; then
             INSTALLATION_ID="${{ github.event.installation.id }}"
           fi
@@ -108,11 +108,11 @@ jobs:
           fail-on-warnings: false
 
       - name: Upload baseline to dashboard
-        if: ${{ steps.check-app-secrets.outputs.present == 'true' && secrets.GH_WEBHOOK_SECRET != '' }}
+        if: ${{ secrets.GH_WEBHOOK_SECRET != '' }}
         env:
           GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
         run: |
-          INSTALLATION_ID="${{ steps.app-token.outputs.installation-id }}"
+          INSTALLATION_ID="${INSTALLATION_ID:-}"
           if [ -z "$INSTALLATION_ID" ]; then
             INSTALLATION_ID="${{ github.event.installation.id }}"
           fi
@@ -162,7 +162,7 @@ jobs:
         env:
           GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
         run: |
-          INSTALLATION_ID="${{ steps.app-token.outputs.installation-id }}"
+          INSTALLATION_ID="${INSTALLATION_ID:-}"
           if [ -z "$INSTALLATION_ID" ]; then
             INSTALLATION_ID="${{ github.event.installation.id }}"
           fi
