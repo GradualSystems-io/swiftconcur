@@ -16,6 +16,8 @@ interface TrendChartProps {
   className?: string;
   variant?: 'line' | 'area';
   showComparison?: boolean;
+  initialData?: TrendDataPoint[];
+  repositoryIds?: string[];
 }
 
 interface TrendAnalysis {
@@ -53,24 +55,63 @@ function analyzeTrend(data: TrendDataPoint[]): TrendAnalysis {
   return { direction, percentage: Math.abs(percentage), isSignificant };
 }
 
+function transformTrendRows(rows: Array<{ date: string; total_warnings: number; run_count: number; critical_warnings: number }> = []) {
+  const map = new Map<string, { warnings: number; runs: number; critical: number }>();
+
+  for (const row of rows) {
+    const current = map.get(row.date) ?? { warnings: 0, runs: 0, critical: 0 };
+    current.warnings += row.total_warnings ?? 0;
+    current.runs += row.run_count ?? 0;
+    current.critical += row.critical_warnings ?? 0;
+    map.set(row.date, current);
+  }
+
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, totals]) => ({
+      date: formatDate(date, 'short'),
+      warnings: totals.warnings,
+      runs: totals.runs,
+      critical: totals.critical,
+    }));
+}
+
 export function TrendChart({ 
   repoId, 
   days = 30, 
   className,
   variant = 'area',
-  showComparison = true 
+  showComparison = true,
+  initialData,
+  repositoryIds,
 }: TrendChartProps) {
   const supabase = createClient();
   const { reportSecurityEvent } = useSecurity();
+  const repoList = repositoryIds?.filter(Boolean) ?? undefined;
+  const enabled = repoId ? true : repoList ? repoList.length > 0 : true;
+
+  const queryKey = [
+    'trend',
+    repoId ?? (repoList ? repoList.slice().sort().join(',') : 'all'),
+    days,
+  ];
   
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['trend', repoId, days],
+    queryKey,
     queryFn: async () => {
       try {
         // Security: Validate repoId if provided
         if (repoId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(repoId)) {
           reportSecurityEvent('invalid_repo_id', { repoId });
           throw new Error('Invalid repository ID');
+        }
+
+        if (!repoId && repoList && repoList.length) {
+          const invalidRepo = repoList.find(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id));
+          if (invalidRepo) {
+            reportSecurityEvent('invalid_repo_id', { repoId: invalidRepo });
+            throw new Error('Invalid repository ID');
+          }
         }
         
         const startDate = new Date();
@@ -84,6 +125,8 @@ export function TrendChart({
         
         if (repoId) {
           query = query.eq('repository_id', repoId);
+        } else if (repoList && repoList.length > 0) {
+          query = query.in('repository_id', repoList);
         }
 
         const { data: rawData, error } = await query;
@@ -92,14 +135,9 @@ export function TrendChart({
           reportSecurityEvent('database_error', { error: error.message });
           throw error;
         }
-        
+
         // Transform data for charting
-        const chartData: TrendDataPoint[] = rawData?.map(row => ({
-          date: formatDate(row.date, 'short'),
-          warnings: row.total_warnings,
-          runs: row.run_count,
-          critical: row.critical_warnings,
-        })) || [];
+        const chartData: TrendDataPoint[] = transformTrendRows(rawData ?? []);
         
         return chartData;
       } catch (error) {
@@ -113,8 +151,11 @@ export function TrendChart({
       if (error?.message?.includes('Invalid')) return false;
       return failureCount < 2;
     },
+    initialData,
+    initialDataUpdatedAt: initialData ? Date.now() : undefined,
+    enabled,
   });
-  
+
   // Subscribe to real-time updates
   useRealtime(repoId, () => {
     refetch();

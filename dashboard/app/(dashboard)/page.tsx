@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { WarningBreakdown, WarningType, RepoWithStats } from '@/lib/supabase/types';
+import { formatDate } from '@/lib/utils';
 
 interface RepositoryRow {
   id: string;
@@ -184,6 +185,24 @@ export default async function DashboardPage() {
     dailyByRepo.get(row.repository_id)!.push(row);
   }
 
+  const trendDataMap = new Map<string, { warnings: number; runs: number; critical: number }>();
+  for (const row of dailyRows) {
+    const existing = trendDataMap.get(row.date) ?? { warnings: 0, runs: 0, critical: 0 };
+    existing.warnings += row.total_warnings;
+    existing.runs += row.run_count;
+    existing.critical += row.critical_warnings;
+    trendDataMap.set(row.date, existing);
+  }
+
+  const trendChartData = Array.from(trendDataMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, totals]) => ({
+      date: formatDate(date, 'short'),
+      warnings: totals.warnings,
+      runs: totals.runs,
+      critical: totals.critical,
+    }));
+
   const warningTypeCounts = new Map<WarningType, number>();
   const severityByRepo = new Map<string, { critical: number; high: number; total: number }>();
 
@@ -311,7 +330,13 @@ export default async function DashboardPage() {
       
       {/* Charts Section */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <TrendChart days={30} variant="area" className="h-full" />
+        <TrendChart
+          days={30}
+          variant="area"
+          className="h-full"
+          initialData={trendChartData}
+          repositoryIds={repoIds}
+        />
         <WarningTypeChart data={warningTypeData} className="h-full" />
       </div>
       
