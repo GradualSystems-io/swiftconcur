@@ -23,6 +23,7 @@ export function WebhookSecretManager({ installationId, secretConfigured }: Webho
   const [secretValue, setSecretValue] = useState('');
   const [status, setStatus] = useState<StatusState>({ state: 'idle' });
   const [configured, setConfigured] = useState(secretConfigured);
+  const [showForm, setShowForm] = useState(!secretConfigured);
 
   const isSaving = status.state === 'saving';
 
@@ -63,6 +64,7 @@ export function WebhookSecretManager({ installationId, secretConfigured }: Webho
 
       setSecretValue('');
       setConfigured(true);
+      setShowForm(false);
       setStatus({ state: 'saved', message: 'Webhook secret saved. Add the same value to your GitHub Actions secrets.' });
     } catch (error) {
       console.error('Failed to save webhook secret', error);
@@ -91,6 +93,7 @@ export function WebhookSecretManager({ installationId, secretConfigured }: Webho
       }
 
       setConfigured(false);
+      setShowForm(true);
       setStatus({ state: 'cleared', message: 'Webhook secret removed. Unsigned payloads will be accepted.' });
     } catch (error) {
       console.error('Failed to clear webhook secret', error);
@@ -106,39 +109,67 @@ export function WebhookSecretManager({ installationId, secretConfigured }: Webho
           <div className="text-sm text-muted-foreground">
             <p className="font-medium text-foreground">Webhook signing</p>
             <p>
-              Paste the <code className="rounded bg-muted px-1 py-0.5">GH_WEBHOOK_SECRET</code> value you added to your repository secrets. We use it to
-              validate incoming SwiftConcur warning webhooks.
+              Paste the <code className="rounded bg-muted px-1 py-0.5">GH_WEBHOOK_SECRET</code> value you added to your repository secrets. We use it to validate incoming SwiftConcur warning webhooks.
             </p>
           </div>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div className="space-y-2">
-          <Label htmlFor="webhook-secret">Webhook secret</Label>
-          <Input
-            id="webhook-secret"
-            type="text"
-            placeholder="e.g. 8f2c4b..."
-            value={secretValue}
-            onChange={event => setSecretValue(event.target.value)}
-            disabled={isSaving}
-            autoComplete="off"
-          />
+      {configured && !showForm ? (
+        <div className="flex flex-col gap-3 rounded-md border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-500" />
+            <div>
+              <p className="font-medium text-foreground">Secret configured</p>
+              <p className="text-sm text-muted-foreground">
+                Incoming SwiftConcur warning payloads will be verified with this secret. Remove it below to rotate or disable signing.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => setShowForm(true)} disabled={isSaving}>
+              Update secret
+            </Button>
+            <Button type="button" variant="ghost" onClick={handleClear} disabled={isSaving}>
+              <XCircle className="mr-2 h-4 w-4" />
+              Remove secret
+            </Button>
+          </div>
         </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="webhook-secret">Webhook secret</Label>
+            <Input
+              id="webhook-secret"
+              type="text"
+              placeholder="e.g. 8f2c4b..."
+              value={secretValue}
+              onChange={event => setSecretValue(event.target.value)}
+              disabled={isSaving}
+              autoComplete="off"
+            />
+          </div>
 
-        <div className="flex items-center gap-2">
-          <Button type="submit" disabled={isSaving}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-            Save secret
-          </Button>
-          <Button type="button" variant="outline" disabled={isSaving || !configured} onClick={handleClear}>
-            <XCircle className="mr-2 h-4 w-4" />
-            Remove secret
-          </Button>
-          <span className="text-sm text-muted-foreground">{configured ? 'Secret configured' : 'Secret not set yet'}</span>
-        </div>
-      </form>
+          <div className="flex items-center gap-2">
+            <Button type="submit" disabled={isSaving}>
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+              Save secret
+            </Button>
+            <Button type="button" variant="outline" disabled={isSaving || !configured} onClick={handleClear}>
+              <XCircle className="mr-2 h-4 w-4" />
+              Remove secret
+            </Button>
+            <span className="text-sm text-muted-foreground">{configured ? 'Secret configured' : 'Secret not set yet'}</span>
+          </div>
+
+          {configured && (
+            <Button type="button" variant="ghost" className="px-0 text-sm text-muted-foreground" onClick={() => setShowForm(false)} disabled={isSaving}>
+              Cancel
+            </Button>
+          )}
+        </form>
+      )}
 
       {status.state !== 'idle' && status.message && (
         <Alert variant={status.state === 'error' ? 'destructive' : 'default'}>
