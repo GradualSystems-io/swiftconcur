@@ -43,11 +43,11 @@ export function useRealtime(
           {
             event: 'INSERT',
             schema: 'public',
-            table: 'runs',
-            filter: `repo_id=eq.${repoId}`,
+            table: 'warning_runs',
+            filter: `repository_id=eq.${repoId}`,
           },
           (payload) => {
-            console.log('New run detected:', payload.new);
+            console.log('New warning run detected:', payload.new);
             reportSecurityEvent('realtime_new_run', { repoId, runId: payload.new.id });
             options.onNewRun?.(payload.new);
             onUpdate();
@@ -58,11 +58,11 @@ export function useRealtime(
           {
             event: 'UPDATE',
             schema: 'public',
-            table: 'runs',
-            filter: `repo_id=eq.${repoId}`,
+            table: 'warning_runs',
+            filter: `repository_id=eq.${repoId}`,
           },
           (payload) => {
-            console.log('Run updated:', payload.new);
+            console.log('Warning run updated:', payload.new);
             options.onRunUpdate?.(payload.new);
             onUpdate();
           }
@@ -172,10 +172,10 @@ export function useGlobalRealtime(onUpdate: () => void) {
           {
             event: '*',
             schema: 'public',
-            table: 'runs',
+            table: 'warning_runs',
           },
           (payload) => {
-            console.log('Global run change:', payload);
+            console.log('Global warning run change:', payload);
             onUpdate();
           }
         )
@@ -184,7 +184,7 @@ export function useGlobalRealtime(onUpdate: () => void) {
           {
             event: '*',
             schema: 'public',
-            table: 'repo_warning_daily',
+            table: 'repository_warning_daily',
           },
           (payload) => {
             console.log('Daily stats updated:', payload);

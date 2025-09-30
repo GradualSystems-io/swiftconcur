@@ -77,15 +77,15 @@ export function TrendChart({
         startDate.setDate(startDate.getDate() - days);
         
         let query = supabase
-          .from('repo_warning_daily')
+          .from('repository_warning_daily')
           .select('*')
           .gte('date', startDate.toISOString().split('T')[0])
           .order('date', { ascending: true });
         
         if (repoId) {
-          query = query.eq('repo_id', repoId);
+          query = query.eq('repository_id', repoId);
         }
-        
+
         const { data: rawData, error } = await query;
         
         if (error) {

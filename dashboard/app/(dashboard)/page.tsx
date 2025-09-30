@@ -3,10 +3,88 @@ import { RepoCard } from '@/components/dashboard/RepoCard';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { TrendChart } from '@/components/charts/TrendChart';
 import { WarningTypeChart } from '@/components/charts/WarningTypeChart';
-import { AlertTriangle, GitBranch, TrendingDown, CheckCircle, Shield, Activity } from 'lucide-react';
+import { AlertTriangle, GitBranch, CheckCircle, Shield, Activity } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { WarningBreakdown, WarningType, RepoWithStats } from '@/lib/supabase/types';
+
+interface RepositoryRow {
+  id: string;
+  name: string | null;
+  full_name: string | null;
+  is_private: boolean;
+  default_branch: string | null;
+  language: string | null;
+  stars_count: number | null;
+  updated_at: string | null;
+  github_repo_id: number | null;
+}
+
+interface WarningRunRow {
+  id: string;
+  repository_id: string;
+  commit_sha: string | null;
+  branch: string | null;
+  pull_request: number | null;
+  total_warnings: number;
+  new_warnings: number;
+  fixed_warnings: number;
+  critical_warnings: number;
+  build_time_seconds: number | null;
+  report_url: string | null;
+  created_at: string;
+}
+
+interface WarningRow {
+  run_id: string;
+  type: WarningType;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+}
+
+interface DailyRow {
+  repository_id: string;
+  date: string;
+  run_count: number;
+  total_warnings: number;
+  new_warnings: number;
+  fixed_warnings: number;
+  critical_warnings: number;
+}
+
+function calculatePercentageChange(current: number, previous: number): number {
+  if (previous === 0) {
+    return current > 0 ? 100 : 0;
+  }
+  return ((current - previous) / previous) * 100;
+}
+
+function calculateTrend(rows: DailyRow[], windowDays: number): number {
+  if (!rows.length) {
+    return 0;
+  }
+
+  const now = new Date();
+  const currentWindowStart = new Date(now);
+  currentWindowStart.setDate(currentWindowStart.getDate() - windowDays);
+
+  const previousWindowStart = new Date(now);
+  previousWindowStart.setDate(previousWindowStart.getDate() - windowDays * 2);
+
+  let currentSum = 0;
+  let previousSum = 0;
+
+  for (const row of rows) {
+    const rowDate = new Date(`${row.date}T00:00:00Z`);
+    if (rowDate >= currentWindowStart) {
+      currentSum += row.total_warnings;
+    } else if (rowDate >= previousWindowStart && rowDate < currentWindowStart) {
+      previousSum += row.total_warnings;
+    }
+  }
+
+  return calculatePercentageChange(currentSum, previousSum);
+}
 
 export default async function DashboardPage() {
   const { user, error } = await verifyUser();
@@ -35,44 +113,160 @@ export default async function DashboardPage() {
     throw new Error(`Failed to load repositories: ${repoError.message}`);
   }
 
-  const repoData = (repoRows ?? []).map((repo) => ({
-    id: repo.id || repo.github_repo_id?.toString() || repo.full_name,
-    name: repo.name || repo.full_name || 'Repository',
-    tier: 'free' as const,
-    created_at: repo.updated_at || new Date().toISOString(),
-    github_id: repo.github_repo_id || 0,
-    full_name: repo.full_name || repo.name || 'Unknown',
-    is_private: repo.is_private ?? true,
-    webhook_secret: null,
-    repo_stats: [{
-      repo_id: repo.id || repo.github_repo_id?.toString() || repo.full_name || 'repo',
-      total_runs: 0,
-      total_warnings: 0,
-      critical_warnings: 0,
-      high_warnings: 0,
-      last_run_at: repo.updated_at,
-      trend_7d: 0,
-      trend_30d: 0,
-      avg_warnings_per_run: 0,
-      success_rate: 100,
-    }],
-  }));
+  const repositories: RepositoryRow[] = repoRows ?? [];
+  const repoIds = repositories.map((repo) => repo.id).filter(Boolean);
 
-  const totalWarnings = 0;
-  const criticalWarnings = 0;
-  const activeRepos = repoRows?.filter(repo =>
-    repo.updated_at && new Date(repo.updated_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-  ).length || 0;
+  let warningRuns: WarningRunRow[] = [];
+  if (repoIds.length > 0) {
+    const { data: runsData, error: runsError } = await supabase
+      .from('warning_runs')
+      .select('id, repository_id, commit_sha, branch, pull_request, total_warnings, new_warnings, fixed_warnings, critical_warnings, build_time_seconds, report_url, created_at')
+      .in('repository_id', repoIds)
+      .order('created_at', { ascending: true });
 
-  const successRate = 100;
-  
-  // Mock warning type data for demonstration
-  const warningTypeData = [
-    { type: 'actor_isolation' as const, count: Math.floor(totalWarnings * 0.4), percentage: 40 },
-    { type: 'sendable' as const, count: Math.floor(totalWarnings * 0.3), percentage: 30 },
-    { type: 'data_race' as const, count: Math.floor(totalWarnings * 0.2), percentage: 20 },
-    { type: 'performance' as const, count: Math.floor(totalWarnings * 0.1), percentage: 10 },
-  ].filter(item => item.count > 0);
+    if (runsError && runsError.code !== 'PGRST116') {
+      throw new Error(`Failed to load warning runs: ${runsError.message}`);
+    }
+
+    warningRuns = runsData ?? [];
+  }
+
+  const runRepoMap = new Map<string, string>();
+  const runsByRepo = new Map<string, WarningRunRow[]>();
+  for (const run of warningRuns) {
+    runRepoMap.set(run.id, run.repository_id);
+    if (!runsByRepo.has(run.repository_id)) {
+      runsByRepo.set(run.repository_id, []);
+    }
+    runsByRepo.get(run.repository_id)!.push(run);
+  }
+
+  const runIds = warningRuns.map((run) => run.id);
+
+  let warnings: WarningRow[] = [];
+  if (runIds.length > 0) {
+    const { data: warningsData, error: warningsError } = await supabase
+      .from('warnings')
+      .select('run_id, type, severity')
+      .in('run_id', runIds);
+
+    if (warningsError && warningsError.code !== 'PGRST116') {
+      throw new Error(`Failed to load warnings: ${warningsError.message}`);
+    }
+
+    warnings = warningsData ?? [];
+  }
+
+  let dailyRows: DailyRow[] = [];
+  if (repoIds.length > 0) {
+    const windowStart = new Date();
+    windowStart.setDate(windowStart.getDate() - 90);
+
+    const { data: dailyData, error: dailyError } = await supabase
+      .from('repository_warning_daily')
+      .select('repository_id, date, run_count, total_warnings, new_warnings, fixed_warnings, critical_warnings')
+      .in('repository_id', repoIds)
+      .gte('date', windowStart.toISOString().split('T')[0])
+      .order('date', { ascending: true });
+
+    if (dailyError && dailyError.code !== 'PGRST116') {
+      throw new Error(`Failed to load daily aggregates: ${dailyError.message}`);
+    }
+
+    dailyRows = dailyData ?? [];
+  }
+
+  const dailyByRepo = new Map<string, DailyRow[]>();
+  for (const row of dailyRows) {
+    if (!dailyByRepo.has(row.repository_id)) {
+      dailyByRepo.set(row.repository_id, []);
+    }
+    dailyByRepo.get(row.repository_id)!.push(row);
+  }
+
+  const warningTypeCounts = new Map<WarningType, number>();
+  const severityByRepo = new Map<string, { critical: number; high: number; total: number }>();
+
+  for (const warning of warnings) {
+    const repoId = runRepoMap.get(warning.run_id);
+    if (!repoId) continue;
+
+    warningTypeCounts.set(warning.type, (warningTypeCounts.get(warning.type) ?? 0) + 1);
+
+    if (!severityByRepo.has(repoId)) {
+      severityByRepo.set(repoId, { critical: 0, high: 0, total: 0 });
+    }
+    const counters = severityByRepo.get(repoId)!;
+    counters.total += 1;
+    if (warning.severity === 'critical') {
+      counters.critical += 1;
+    }
+    if (warning.severity === 'high') {
+      counters.high += 1;
+    }
+  }
+
+  const totalWarnings = warningRuns.reduce((sum, run) => sum + run.total_warnings, 0);
+  const criticalWarnings = warningRuns.reduce((sum, run) => sum + run.critical_warnings, 0);
+  const totalRuns = warningRuns.length;
+  const runsWithWarnings = warningRuns.filter((run) => run.total_warnings > 0).length;
+  const successRate = totalRuns === 0 ? 100 : ((totalRuns - runsWithWarnings) / totalRuns) * 100;
+
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const activeRepos = Array.from(runsByRepo.entries()).filter(([, runs]) =>
+    runs.some((run) => new Date(run.created_at) >= sevenDaysAgo)
+  ).length;
+
+  const warningTypeData: WarningBreakdown[] = Array.from(warningTypeCounts.entries())
+    .map(([type, count]) => ({
+      type,
+      count,
+      percentage: totalWarnings > 0 ? (count / totalWarnings) * 100 : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const repoData: RepoWithStats[] = repositories.map((repo) => {
+    const repoRuns = (runsByRepo.get(repo.id) ?? []).sort((a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+    const repoSeverity = severityByRepo.get(repo.id) ?? { critical: 0, high: 0, total: 0 };
+    const repoDailyRows = (dailyByRepo.get(repo.id) ?? []).sort((a, b) => a.date.localeCompare(b.date));
+
+    const repoTotalRuns = repoRuns.length;
+    const repoTotalWarnings = repoRuns.reduce((sum, run) => sum + run.total_warnings, 0);
+    const repoCriticalWarnings = repoRuns.reduce((sum, run) => sum + run.critical_warnings, 0);
+    const repoSuccessRate = repoTotalRuns === 0
+      ? 100
+      : ((repoRuns.filter((run) => run.total_warnings === 0).length) / repoTotalRuns) * 100;
+
+    const stats = repoTotalRuns === 0 && repoSeverity.total === 0 && repoDailyRows.length === 0
+      ? undefined
+      : {
+          repo_id: repo.id,
+          total_runs: repoTotalRuns,
+          total_warnings: repoTotalWarnings,
+          critical_warnings: repoCriticalWarnings,
+          high_warnings: repoSeverity.high,
+          last_run_at: repoRuns.at(-1)?.created_at ?? null,
+          trend_7d: calculateTrend(repoDailyRows, 7),
+          trend_30d: calculateTrend(repoDailyRows, 30),
+          avg_warnings_per_run: repoTotalRuns === 0 ? 0 : repoTotalWarnings / repoTotalRuns,
+          success_rate: repoSuccessRate,
+        };
+
+    return {
+      id: repo.id,
+      name: repo.name || repo.full_name || 'Repository',
+      tier: 'free' as const,
+      created_at: repo.updated_at || new Date().toISOString(),
+      github_id: repo.github_repo_id || 0,
+      full_name: repo.full_name || repo.name || 'Unknown',
+      is_private: repo.is_private ?? true,
+      webhook_secret: null,
+      repo_stats: stats ? [stats] : [],
+    } as RepoWithStats;
+  });
   
   return (
     <div className="space-y-8">
@@ -108,7 +302,7 @@ export default async function DashboardPage() {
         />
         <StatCard
           title="Success Rate"
-          value={`${successRate}%`}
+          value={`${Math.round(successRate)}%`}
           icon={CheckCircle}
           variant="success"
           description="Non-critical code quality"
@@ -117,49 +311,8 @@ export default async function DashboardPage() {
       
       {/* Charts Section */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Global Warning Trends</CardTitle>
-            <CardDescription>Warning patterns over the last 30 days</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <TrendChart 
-              days={30}
-              variant="area"
-            />
-          </CardContent>
-        </Card>
-        
-        {warningTypeData.length > 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Warning Types Distribution</CardTitle>
-              <CardDescription>Breakdown of warning categories</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <WarningTypeChart 
-                data={warningTypeData}
-              />
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Warning Types Distribution</CardTitle>
-              <CardDescription>No warnings to analyze</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                <div className="text-center">
-                  <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-500" />
-                  <h3 className="text-lg font-semibold mb-2">Excellent Code Quality!</h3>
-                  <p className="text-sm">No Swift concurrency warnings detected.</p>
-                  <p className="text-xs mt-1">Keep up the great work!</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        <TrendChart days={30} variant="area" className="h-full" />
+        <WarningTypeChart data={warningTypeData} className="h-full" />
       </div>
       
       {/* Repository Grid */}
