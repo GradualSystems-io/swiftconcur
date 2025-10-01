@@ -34,7 +34,6 @@ export default async function SettingsPage() {
       id,
       name,
       full_name,
-      tier,
       is_private,
       github_repo_id,
       created_at,
@@ -58,6 +57,10 @@ export default async function SettingsPage() {
       .order('created_at', { ascending: false })
   ]);
 
+  if (reposResult.error && reposResult.error.code !== 'PGRST116') {
+    console.error('Failed to load repositories for settings:', reposResult.error);
+  }
+
   const userRepos = (reposResult.data || []).map((repo) => ({
     repo_id: repo.id,
     role: repo.user_id === user.id ? ('owner' as const) : ('read' as const),
@@ -65,7 +68,7 @@ export default async function SettingsPage() {
       id: repo.id,
       name: repo.name ?? repo.full_name ?? 'Repository',
       full_name: repo.full_name ?? repo.name ?? 'Repository',
-      tier: repo.tier ?? 'free',
+      tier: 'free' as const,
       is_private: repo.is_private ?? false,
       github_id: repo.github_repo_id ?? null,
       created_at: repo.created_at,
