@@ -17,21 +17,40 @@ export default async function SettingsPage() {
   const supabase = createClient();
   
   // Get user's repositories and API tokens
+  const { data: installation } = await supabase
+    .from('github_installations')
+    .select('installation_id, target_login')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  const repoFilters = [`user_id.eq.${user.id}`];
+  if (installation?.installation_id) {
+    repoFilters.push(`installation_id.eq.${installation.installation_id}`);
+  }
+
+  let repoQuery = supabase
+    .from('repositories')
+    .select(`
+      id,
+      name,
+      full_name,
+      tier,
+      is_private,
+      github_repo_id,
+      created_at,
+      user_id,
+      installation_id
+    `)
+    .order('name', { ascending: true });
+
+  if (repoFilters.length === 1) {
+    repoQuery = repoQuery.eq('user_id', user.id);
+  } else {
+    repoQuery = repoQuery.or(repoFilters.join(','));
+  }
+
   const [reposResult, tokensResult] = await Promise.all([
-    supabase
-      .from('repositories')
-      .select(`
-        id,
-        name,
-        full_name,
-        tier,
-        is_private,
-        github_repo_id,
-        created_at,
-        user_id
-      `)
-      .eq('user_id', user.id)
-      .order('name', { ascending: true }),
+    repoQuery,
       
     supabase
       .from('api_tokens')
@@ -41,7 +60,7 @@ export default async function SettingsPage() {
 
   const userRepos = (reposResult.data || []).map((repo) => ({
     repo_id: repo.id,
-    role: 'owner' as const,
+    role: repo.user_id === user.id ? ('owner' as const) : ('read' as const),
     repos: {
       id: repo.id,
       name: repo.name ?? repo.full_name ?? 'Repository',
