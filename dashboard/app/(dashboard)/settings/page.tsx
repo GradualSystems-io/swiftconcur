@@ -19,22 +19,19 @@ export default async function SettingsPage() {
   // Get user's repositories and API tokens
   const [reposResult, tokensResult] = await Promise.all([
     supabase
-      .from('user_repos')
+      .from('repositories')
       .select(`
-        repo_id,
-        role,
-        repos (
-          id,
-          name,
-          full_name,
-          tier,
-          is_private,
-          github_id,
-          created_at
-        )
+        id,
+        name,
+        full_name,
+        tier,
+        is_private,
+        github_repo_id,
+        created_at,
+        user_id
       `)
       .eq('user_id', user.id)
-      .order('repos(name)'),
+      .order('name', { ascending: true }),
       
     supabase
       .from('api_tokens')
@@ -42,7 +39,19 @@ export default async function SettingsPage() {
       .order('created_at', { ascending: false })
   ]);
 
-  const userRepos = reposResult.data || [];
+  const userRepos = (reposResult.data || []).map((repo) => ({
+    repo_id: repo.id,
+    role: 'owner' as const,
+    repos: {
+      id: repo.id,
+      name: repo.name ?? repo.full_name ?? 'Repository',
+      full_name: repo.full_name ?? repo.name ?? 'Repository',
+      tier: repo.tier ?? 'free',
+      is_private: repo.is_private ?? false,
+      github_id: repo.github_repo_id ?? null,
+      created_at: repo.created_at,
+    },
+  }));
   const apiTokens = tokensResult.data || [];
   
   return (
