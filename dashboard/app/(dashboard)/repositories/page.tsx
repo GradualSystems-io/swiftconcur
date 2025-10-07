@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { GitBranch, Plus, ExternalLink, Settings, BookOpen } from 'lucide-react';
 import Link from 'next/link';
-import { ConnectRepositoryForm } from '@/components/repositories/ConnectRepositoryForm';
 import GitHubInstallation from '@/components/repositories/GitHubInstallation';
 
 export default async function RepositoriesPage() {
@@ -58,7 +57,7 @@ export default async function RepositoriesPage() {
             </Link>
           </Button>
           <Button asChild>
-            <a href="#connect">
+            <a href="#github-app">
               <Plus className="h-4 w-4 mr-2" />
               Add Repository
             </a>
@@ -67,7 +66,9 @@ export default async function RepositoriesPage() {
       </div>
 
       {/* GitHub App Integration */}
-      <GitHubInstallation />
+      <section id="github-app" className="scroll-mt-24">
+        <GitHubInstallation />
+      </section>
 
       {/* Setup Instructions */}
       <Card>
@@ -80,6 +81,11 @@ export default async function RepositoriesPage() {
         <CardContent className="prose prose-sm max-w-none">
           <ol className="space-y-4">
             <li>
+              <strong>Install the GitHub App:</strong> Use the button above to install SwiftConcur
+              on your organization or personal account. This connects your repositories and
+              provisions webhooks automatically.
+            </li>
+            <li>
               <strong>Add GitHub Action:</strong> Add the SwiftConcur CI action to your workflow file:
               <pre className="bg-gray-100 dark:bg-gray-800 p-3 rounded mt-2 text-sm overflow-x-auto">
 {`- name: SwiftConcur CI
@@ -91,8 +97,8 @@ export default async function RepositoriesPage() {
               </pre>
             </li>
             <li>
-              <strong>Configure Webhook:</strong> We'll automatically set up a webhook to receive 
-              build results from your repository.
+              <strong>Verify Webhook:</strong> The GitHub App configures the webhook for you—no
+              manual tokens required.
             </li>
             <li>
               <strong>Start Building:</strong> Push code or create a pull request to trigger 

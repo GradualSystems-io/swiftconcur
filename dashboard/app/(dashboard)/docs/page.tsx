@@ -609,8 +609,9 @@ export default function DocumentationPage() {
                 GitHub Action permission denied
               </h4>
               <p className="text-sm text-muted-foreground mt-1">
-                Verify your GitHub personal access token has <code className="bg-muted px-1 py-0.5 rounded">repo</code> and{' '}
-                <code className="bg-muted px-1 py-0.5 rounded">admin:repo_hook</code> permissions.
+                Confirm the SwiftConcur GitHub App is installed with access to this repository and
+                re-run the sync from the Repositories page. The app manages permissions and webhooks
+                automatically—no personal access token required.
               </p>
             </div>
           </div>
