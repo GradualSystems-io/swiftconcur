@@ -77,12 +77,12 @@ export default function GitHubInstallation() {
     const messageParam = urlParams.get('message');
 
     if (installationParam === 'success') {
-      setSuccess('GitHub App installed successfully! Your repositories are being synced.');
+      setSuccess('GitHub App installed successfully. Repositories are syncing—no personal access tokens required.');
       // Clean URL
       window.history.replaceState({}, '', window.location.pathname);
       loadInstallationData();
     } else if (installationParam === 'updated') {
-      setSuccess('Installation updated successfully!');
+      setSuccess('Installation updated successfully. Re-run a sync if you added new repositories.');
       window.history.replaceState({}, '', window.location.pathname);
       loadInstallationData();
     } else if (errorParam) {
@@ -262,21 +262,24 @@ export default function GitHubInstallation() {
             GitHub Integration
           </CardTitle>
           <CardDescription>
-            Connect your GitHub repositories to track Swift concurrency warnings
+            Install and manage the SwiftConcur GitHub App—this is the required path for
+            connecting repositories and provisioning webhooks.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {!installation ? (
             <div className="text-center space-y-4">
               <p className="text-muted-foreground">
-                Install the SwiftConcur GitHub App to connect your repositories.
+                Install the SwiftConcur GitHub App to connect your repositories. Personal access
+                tokens and manual webhooks are no longer supported.
               </p>
               <Button onClick={handleInstallApp} size="lg">
                 <Github className="w-4 h-4 mr-2" />
                 Install GitHub App
               </Button>
               <p className="text-sm text-muted-foreground">
-                This will redirect you to GitHub to authorize the app.
+                You'll be redirected to GitHub to authorize the app for the organization or
+                account that owns your Swift projects.
               </p>
             </div>
           ) : (
@@ -343,7 +346,8 @@ export default function GitHubInstallation() {
           <CardHeader>
             <CardTitle>Connected Repositories ({repositories.length})</CardTitle>
             <CardDescription>
-              Repositories with SwiftConcur analysis enabled
+              Repositories with SwiftConcur analysis enabled via the GitHub App. Use “Sync Repos”
+              after adjusting installation scope.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -386,7 +390,8 @@ export default function GitHubInstallation() {
             <Github className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="text-lg font-medium mb-2">No Repositories Found</h3>
             <p className="text-muted-foreground mb-4">
-              The GitHub App is installed but no repositories are connected yet.
+              The GitHub App is installed but no repositories are connected yet. Update the
+              installation’s repository access on GitHub, then sync from this page.
             </p>
             <Button variant="outline" onClick={handleSyncRepositories}>
               Sync Repositories

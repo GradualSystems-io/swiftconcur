@@ -45,7 +45,8 @@ export default async function RepositoriesPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Repositories</h1>
           <p className="text-muted-foreground">
-            Manage your Swift repositories and monitor concurrency warnings
+            SwiftConcur connects through our GitHub App—install it to add repositories and start
+            streaming concurrency insights. Manual token onboarding is no longer supported.
           </p>
         </div>
         
