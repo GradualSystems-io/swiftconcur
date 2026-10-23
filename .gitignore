@@ -46,3 +46,13 @@ instructions/.DS_Store
 build.xcresult.zip
 /tmp_xc
 /build
+
+# Local credentials and private keys
+.env*
+*.pem
+*.key
+*service-account*.json
+*service_account*.json
+*serviceAccount*.json
+*firebase-adminsdk*.json
+credentials.json
